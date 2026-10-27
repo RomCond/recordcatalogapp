@@ -129,6 +129,14 @@
   // musicbrainz.js uses the same words to find them.
   const DELUXE_WORDS = /\b(deluxe|expanded)\b/i;
 
+  // You keep one copy of each album: the same release group, or the same artist and title when
+  // either was typed in by hand, in the same edition (the original and its deluxe are different albums).
+  function sameAlbum(a, b) {
+    if (DELUXE_WORDS.test(a.title) !== DELUXE_WORDS.test(b.title)) return false;
+    if (a.releaseGroupId && b.releaseGroupId) return a.releaseGroupId === b.releaseGroupId;
+    return normArtist(a.artist) === normArtist(b.artist) && normTitle(a.title) === normTitle(b.title);
+  }
+
   function isDeluxeRecord(record, group) {
     if (!group.deluxe) return false;
     if (record.releaseId && group.deluxe.releaseIds.includes(record.releaseId)) return true;
@@ -265,8 +273,15 @@
       all: () => records.slice(),
       get: find,
 
+      // The record you already have for this album, if any.
+      findCopy(input) {
+        return records.find((record) => sameAlbum(record, input)) || null;
+      },
+
       add(input) {
         const record = cleanRecord(input);
+        const copy = records.find((r) => sameAlbum(r, record));
+        if (copy) throw new Error(`"${copy.title}" is already in your collection.`);
         if (find(record.id)) record.id = newId();
         records.push(record);
         commit();
@@ -330,7 +345,7 @@
             skipped++;
             continue;
           }
-          if (ids.has(record.id)) {
+          if (ids.has(record.id) || records.some((r) => sameAlbum(r, record))) {
             skipped++;
             continue;
           }
@@ -396,6 +411,7 @@
     cleanRecord,
     collectionArtists,
     sameArtist,
+    sameAlbum,
     categoryOf,
     compareDiscography,
     pickRandom,

@@ -187,7 +187,10 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     await page.locator('#search-results .result').first().getByRole('button', { name: 'Add' }).click();
     await page.locator('#toast.show', { hasText: 'Added OK Computer' }).waitFor();
     assert.equal(await text(page, '#nav-count'), '1');
-    assert.equal(await text(page, '#search-results .result:first-child .badge'), 'In collection');
+    // Only one copy: an album you have can't be added again
+    const addedButton = page.locator('#search-results .result').first().getByRole('button');
+    assert.equal(await addedButton.innerText(), 'In collection');
+    assert.ok(await addedButton.isDisabled());
     await shot(page, '02-search');
 
     // The same box takes a barcode, and the lookup picks the format from the release
@@ -213,6 +216,13 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     await manual.locator('[name=title]').fill('Dummy');
     await manual.locator('button[type=submit]').click();
     assert.equal(await text(page, '#nav-count'), '5');
+
+    // Typing in an album you already have is turned away, and the form keeps what you typed
+    await manual.locator('[name=title]').fill('dummy');
+    await manual.locator('button[type=submit]').click();
+    await page.locator('#toast.show', { hasText: '"Dummy" is already in your collection.' }).waitFor();
+    assert.equal(await text(page, '#nav-count'), '5');
+    assert.equal(await manual.locator('[name=title]').inputValue(), 'dummy');
 
     // Collection, grouped by artist
     await page.click('a[href="#collection"]');

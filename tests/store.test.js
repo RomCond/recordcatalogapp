@@ -38,6 +38,24 @@ test('records are cleaned, saved and read back', () => {
   assert.equal(S.createStore(storage).all().length, 0);
 });
 
+test('you can only add one copy of an album', () => {
+  const store = S.createStore(S.memoryStorage());
+  store.add({ artist: 'Weezer', title: 'Pinkerton', releaseGroupId: 'pink', format: 'LP' });
+  store.add({ artist: 'Radiohead', title: 'The Bends', format: 'LP' });
+
+  assert.throws(() => store.add({ artist: 'Weezer', title: 'Pinkerton', releaseGroupId: 'pink', format: 'CD' }), /"Pinkerton" is already in your collection/);
+  assert.throws(() => store.add({ artist: 'weezer', title: 'pinkerton' }), /already/, 'typed in by hand');
+  assert.throws(() => store.add({ artist: 'Radiohead', title: 'The Bends (Remastered)' }), /already/, 'a remaster is the same album');
+  assert.ok(store.findCopy({ artist: 'Radiohead', title: 'The Bends', releaseGroupId: 'bends' }));
+
+  // Different albums are fine: a deluxe edition, and a different album with the same title
+  store.add({ artist: 'Weezer', title: 'Pinkerton (Deluxe Edition)', releaseGroupId: 'pink' });
+  store.add({ artist: 'Weezer', title: 'Weezer', releaseGroupId: 'blue' });
+  store.add({ artist: 'Weezer', title: 'Weezer', releaseGroupId: 'green' });
+  assert.equal(store.all().length, 5);
+  assert.equal(store.findCopy({ artist: 'Weezer', title: 'Weezer', releaseGroupId: 'red' }), null);
+});
+
 test('changing the artist name drops the old MusicBrainz artist link', () => {
   const store = S.createStore(S.memoryStorage());
   const record = store.add({ artist: 'Radiohead', title: 'Kid A', artistId: 'a1' });
@@ -67,6 +85,8 @@ test('backups round trip and do not create duplicates', () => {
   assert.deepEqual(target.importJSON(backup), { added: 0, skipped: 2 });
   assert.equal(target.all()[0].format, 'Double LP');
   assert.deepEqual(target.importJSON(JSON.stringify([{ artist: 'Low', title: 'Things We Lost in the Fire' }, { title: 'No artist' }])), { added: 1, skipped: 1 });
+  // A backup from another device skips albums you already have, even with different ids
+  assert.deepEqual(target.importJSON(JSON.stringify([{ id: 'other-device', artist: 'portishead', title: 'Dummy' }])), { added: 0, skipped: 1 });
   assert.throws(() => target.importJSON('not json'), /valid backup/);
   assert.throws(() => target.importJSON('{"hello": 1}'), /look like/);
 });

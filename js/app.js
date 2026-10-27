@@ -104,7 +104,18 @@
     const el = $('#toast');
     el.replaceChildren(h('span', {}, message));
     if (action) {
-      el.append(h('button', { type: 'button', class: 'toast-action', onclick: () => { action.run(); hideToast(); } }, action.label));
+      el.append(h('button', {
+        type: 'button',
+        class: 'toast-action',
+        onclick: () => {
+          hideToast();
+          try {
+            action.run();
+          } catch (e) {
+            toast(e.message); // e.g. undoing a delete after adding that album again
+          }
+        },
+      }, action.label));
     }
     el.classList.add('show');
     clearTimeout(toastTimer);
@@ -115,8 +126,15 @@
     $('#toast').classList.remove('show');
   }
 
+  // Returns the new record, or null after telling the person why it couldn't be added.
   function addWithUndo(input) {
-    const record = store.add(input);
+    let record;
+    try {
+      record = store.add(input);
+    } catch (e) {
+      toast(e.message);
+      return null;
+    }
     toast(`Added ${record.title}`, { label: 'Undo', run: () => store.remove(record.id) });
     return record;
   }
@@ -313,17 +331,14 @@
   }
 
   function renderResults() {
-    const all = store.all();
-    $('#search-results').replaceChildren(...results.map((result) => {
-      const owned = result.releaseGroupId ? all.filter((r) => r.releaseGroupId === result.releaseGroupId).length : 0;
-      return h('li', { class: 'result' },
-        cover(result, 'sm'),
-        h('div', { class: 'result-text' },
-          h('span', { class: 'record-title' }, result.title),
-          h('span', { class: 'record-meta' }, meta(result.artist, result.year, typeLabel(result), result.media)),
-          owned ? h('span', { class: 'badge' }, owned > 1 ? `${owned} in collection` : 'In collection') : null),
-        h('button', { type: 'button', class: owned ? '' : 'primary', onclick: () => addFromResult(result) }, owned ? 'Add again' : 'Add'));
-    }));
+    $('#search-results').replaceChildren(...results.map((result) => h('li', { class: 'result' },
+      cover(result, 'sm'),
+      h('div', { class: 'result-text' },
+        h('span', { class: 'record-title' }, result.title),
+        h('span', { class: 'record-meta' }, meta(result.artist, result.year, typeLabel(result), result.media))),
+      store.findCopy(result)
+        ? h('button', { type: 'button', disabled: true }, 'In collection')
+        : h('button', { type: 'button', class: 'primary', onclick: () => addFromResult(result) }, 'Add'))));
   }
 
   function addFromResult(result) {
@@ -353,18 +368,14 @@
     event.preventDefault();
     const form = event.target;
     const fields = form.elements;
-    try {
-      addWithUndo({
-        artist: fields.artist.value,
-        title: fields.title.value,
-        year: fields.year.value,
-        format: fields.format.value,
-        notes: fields.notes.value,
-      });
-    } catch (e) {
-      toast(e.message);
-      return;
-    }
+    const added = addWithUndo({
+      artist: fields.artist.value,
+      title: fields.title.value,
+      year: fields.year.value,
+      format: fields.format.value,
+      notes: fields.notes.value,
+    });
+    if (!added) return;
     // Keep the artist filled in, since people often add several records by one artist.
     const artist = fields.artist.value;
     form.reset();

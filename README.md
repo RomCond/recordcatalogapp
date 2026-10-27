@@ -2,7 +2,7 @@
 
 A small web app for keeping track of the records you own.
 
-- **Add records fast.** One search box takes any part of an album or artist name ("ok comp", "radiohead kid") or the barcode from the sleeve, and shows matches as you type. Add one in one tap; year and cover art fill in on their own. Anything that isn't in the database can be added by hand.
+- **Add records fast.** One search box takes any part of an album or artist name ("ok comp", "radiohead kid") or the barcode from the sleeve, and shows matches as you type. Add one in one tap; year and cover art fill in on their own. Anything that isn't in the database can be added by hand. You keep one copy per album: albums you already have show "In collection" instead of an Add button (a deluxe edition counts as its own album).
 - **Browse your shelf.** Grouped by artist, with search, a format filter and a few sort orders. Tap a record to edit or delete it.
 - **Pick one at random.** Filter by format or artist if you like. It won't repeat the last few picks.
 - **See what you're missing.** Pick an artist and the app compares their discography with your shelf: what you have, what you don't, and a copyable list to take to the record store. Tap "Got it" when you find one.

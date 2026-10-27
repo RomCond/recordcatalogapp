@@ -434,15 +434,12 @@ details.card[open] > summary::before { content: "\2212"; }
   overflow-wrap: anywhere;
 }
 
-.badge {
-  justify-self: start;
-  margin-top: 4px;
-  padding: 1px 8px;
-  border-radius: 999px;
+/* "In collection": you already have this one, so there's nothing to tap. */
+.result button:disabled {
+  border-color: transparent;
   background: var(--ok-soft);
   color: var(--ok);
-  font-size: 0.75rem;
-  font-weight: 600;
+  cursor: default;
 }
 
 .record, .choice {
