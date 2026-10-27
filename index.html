@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>Record Catalog</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23221c17'/%3E%3Ccircle cx='16' cy='16' r='6' fill='%23b5441a'/%3E%3Ccircle cx='16' cy='16' r='1.5' fill='%23f4eee5'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="#collection"><span class="brand-disc" aria-hidden="true"></span>Record Catalog</a>
+      <nav class="tabs" aria-label="Sections">
+        <a href="#collection">Collection <span class="count" id="nav-count">0</span></a>
+        <a href="#add">Add</a>
+        <a href="#random">Random</a>
+        <a href="#discography">Discography</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="wrap" id="storage-warning" hidden>
+    <p class="banner">Your browser is blocking storage, so these records will be gone when you close this tab. Use Export backup before you leave.</p>
+  </div>
+
+  <main class="wrap">
+    <!-- Collection -->
+    <section id="view-collection" class="view" aria-labelledby="collection-heading">
+      <h1 id="collection-heading" class="view-title">Your collection</h1>
+      <div class="toolbar" id="collection-tools">
+        <input type="search" id="filter-text" placeholder="Search artist, title or notes" aria-label="Search your records">
+        <select id="filter-format" aria-label="Filter by format"></select>
+        <select id="sort" aria-label="Sort by">
+          <option value="artist">Sort: Artist</option>
+          <option value="added">Sort: Recently added</option>
+          <option value="year">Sort: Year</option>
+          <option value="title">Sort: Title</option>
+        </select>
+      </div>
+      <p class="summary muted" id="collection-summary"></p>
+      <div class="card list-card" id="collection-list"></div>
+      <div class="empty" id="collection-empty" hidden>
+        <span class="empty-disc" aria-hidden="true"></span>
+        <h2>Your shelf is empty</h2>
+        <p class="muted">Search by artist, album or barcode and add a record in one tap.</p>
+        <a class="button primary" href="#add">Add your first record</a>
+      </div>
+      <div class="data-tools">
+        <button type="button" id="export-btn">Export backup</button>
+        <button type="button" id="import-btn">Import backup</button>
+        <input type="file" id="import-file" accept=".json,application/json" hidden>
+      </div>
+    </section>
+
+    <!-- Add -->
+    <section id="view-add" class="view" aria-labelledby="add-heading" hidden>
+      <h1 id="add-heading" class="view-title">Add a record</h1>
+      <div class="card">
+        <form id="search-form" class="inline-form" role="search">
+          <label class="field"><span>Find a record</span>
+            <input type="search" name="q" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" placeholder="Album, artist, or barcode">
+          </label>
+          <button type="submit" class="primary">Search</button>
+        </form>
+        <p class="muted small hint">Type any part of a name, like "ok comp" or "radiohead kid", or the barcode from the sleeve. Results show up as you type.</p>
+        <div class="add-as">
+          <label for="add-format">Add as</label>
+          <select id="add-format"></select>
+        </div>
+        <p class="status" id="search-status" role="status" hidden></p>
+        <ul class="results" id="search-results"></ul>
+        <p class="credit muted small">Search results and cover art come from MusicBrainz and the Cover Art Archive.</p>
+      </div>
+      <details class="card" id="manual-add">
+        <summary>Can't find it? Add it by hand</summary>
+        <form id="manual-form" class="form-grid">
+          <label class="field"><span>Artist</span><input name="artist" required autocomplete="off"></label>
+          <label class="field"><span>Title</span><input name="title" required autocomplete="off"></label>
+          <label class="field"><span>Year</span><input name="year" inputmode="numeric" maxlength="4" pattern="\d{4}" placeholder="1997"></label>
+          <label class="field"><span>Format</span><select name="format"></select></label>
+          <label class="field span-2"><span>Notes</span><input name="notes" autocomplete="off" placeholder="Pressing, condition, where you found it"></label>
+          <div class="span-2"><button type="submit" class="primary">Add record</button></div>
+        </form>
+      </details>
+    </section>
+
+    <!-- Random -->
+    <section id="view-random" class="view" aria-labelledby="random-heading" hidden>
+      <h1 id="random-heading" class="view-title">What should I play?</h1>
+      <div class="card random-card">
+        <div class="toolbar two">
+          <select id="random-format" aria-label="Format"></select>
+          <select id="random-artist" aria-label="Artist"></select>
+        </div>
+        <div class="stage" id="spin-stage">
+          <div class="stage-disc" id="spin-disc"></div>
+          <div class="stage-sleeve" id="spin-sleeve"><span class="sleeve-empty">?</span></div>
+        </div>
+        <div class="pick" id="spin-meta" aria-live="polite">
+          <p class="muted">Can't decide? Let your shelf choose.</p>
+        </div>
+        <p class="status" id="random-status" role="status" hidden></p>
+        <button type="button" class="primary big" id="spin-btn">Pick a record</button>
+      </div>
+    </section>
+
+    <!-- Discography -->
+    <section id="view-discography" class="view" aria-labelledby="disco-heading" hidden>
+      <h1 id="disco-heading" class="view-title">What am I missing?</h1>
+      <div class="card">
+        <p class="muted intro">Pick an artist to see which of their releases are not on your shelf yet.</p>
+        <div class="disco-pickers">
+          <label class="field"><span>From your collection</span><select id="disco-artist"></select></label>
+          <form id="artist-search-form" class="inline-form">
+            <label class="field"><span>Or any artist</span><input name="q" autocomplete="off" placeholder="Artist name"></label>
+            <button type="submit">Find</button>
+          </form>
+        </div>
+        <p class="status" id="artist-status" role="status" hidden></p>
+        <ul class="results" id="artist-results"></ul>
+      </div>
+
+      <div id="disco-panel" hidden>
+        <div class="card">
+          <div class="disco-head">
+            <div>
+              <h2 id="disco-name"></h2>
+              <p class="muted" id="disco-progress-text"></p>
+            </div>
+            <button type="button" id="disco-refresh" class="link small">Refresh</button>
+          </div>
+          <div class="progress" aria-hidden="true"><div class="progress-bar" id="disco-bar"></div></div>
+          <div class="toggles" id="disco-filters" role="group" aria-label="Release types to include"></div>
+          <p class="muted small fine" id="disco-updated"></p>
+        </div>
+        <div class="card">
+          <div class="section-head">
+            <h3 id="missing-heading">Missing</h3>
+            <button type="button" id="disco-copy" class="small">Copy list</button>
+          </div>
+          <ul class="results" id="disco-missing"></ul>
+          <p class="muted" id="disco-missing-empty" hidden></p>
+        </div>
+        <div class="card" id="disco-owned-card">
+          <h3 id="owned-heading">On your shelf</h3>
+          <ul class="results" id="disco-owned"></ul>
+        </div>
+        <div class="card" id="disco-unmatched-card" hidden>
+          <h3>Yours, but not matched</h3>
+          <p class="muted small">These didn't match a release above by title. Tap one to fix its title, or ignore it if it's a bootleg or one-off.</p>
+          <ul class="records" id="disco-unmatched"></ul>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="edit-dialog" aria-labelledby="edit-heading">
+    <form method="dialog" id="edit-form" class="edit-form">
+      <div class="edit-head">
+        <div id="edit-cover"></div>
+        <h2 id="edit-heading">Edit record</h2>
+      </div>
+      <div class="form-grid">
+        <label class="field span-2"><span>Artist</span><input name="artist" required autocomplete="off"></label>
+        <label class="field span-2"><span>Title</span><input name="title" required autocomplete="off"></label>
+        <label class="field"><span>Year</span><input name="year" inputmode="numeric" maxlength="4" pattern="\d{4}"></label>
+        <label class="field"><span>Format</span><select name="format"></select></label>
+        <label class="field span-2"><span>Notes</span><textarea name="notes" rows="3"></textarea></label>
+      </div>
+      <div class="dialog-actions">
+        <button value="save" class="primary">Save</button>
+        <button type="button" id="edit-cancel">Cancel</button>
+        <span class="spacer"></span>
+        <button type="button" class="link" id="edit-discography">Discography</button>
+        <button type="button" class="link danger" id="edit-delete">Delete</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="js/store.js"></script>
+  <script src="js/musicbrainz.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

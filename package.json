@@ -1,0 +1,14 @@
+{
+  "name": "recordcatalogapp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Keep track of the records you own, pick one at random, and see what's missing from an artist's discography.",
+  "scripts": {
+    "start": "python3 -m http.server 8080",
+    "test": "node --test tests/store.test.js tests/musicbrainz.test.js",
+    "test:e2e": "node --test tests/app.e2e.test.js"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}
