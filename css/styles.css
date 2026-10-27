@@ -737,6 +737,13 @@ details.card[open] > summary::before { content: "\2212"; }
   color: var(--accent);
 }
 
+.toggle-divider {
+  align-self: stretch;
+  width: 1px;
+  margin: 4px 2px;
+  background: var(--line);
+}
+
 .toggle-count {
   color: var(--muted);
   font-weight: 400;

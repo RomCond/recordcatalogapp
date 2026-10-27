@@ -117,23 +117,46 @@ test('a cancelled search never reaches MusicBrainz', async (t) => {
   assert.equal(fetchMock.mock.callCount(), 0);
 });
 
-test('getDiscography pages through every release group', async (t) => {
-  const offsets = [];
+test('getDiscography pages through release groups and counts vinyl releases', async (t) => {
+  const calls = [];
+  const release = (group, status, ...formats) => ({ status, 'release-group': { id: group }, media: formats.map((format) => ({ format })) });
   t.mock.method(globalThis, 'fetch', async (url) => {
-    const offset = Number(new URL(url).searchParams.get('offset'));
-    offsets.push(offset);
-    const size = offset === 0 ? 100 : 20;
+    const u = new URL(url);
+    calls.push(u);
+    const offset = Number(u.searchParams.get('offset'));
+    if (u.pathname === '/ws/2/release-group') {
+      const size = offset === 0 ? 100 : 20;
+      return jsonResponse({
+        'release-group-count': 120,
+        'release-groups': Array.from({ length: size }, (_, i) => ({ id: `g${offset + i}`, title: `Title ${offset + i}`, 'primary-type': 'Album' })),
+      });
+    }
     return jsonResponse({
-      'release-group-count': 120,
-      'release-groups': Array.from({ length: size }, (_, i) => ({ id: `g${offset + i}`, title: `Title ${offset + i}`, 'primary-type': 'Album' })),
+      count: 5,
+      releases: [
+        release('g0', 'Official', '12" Vinyl', '12" Vinyl'),
+        release('g0', 'Official', '7" Vinyl'),
+        release('g1', 'Bootleg', '12" Vinyl'), // bootlegs don't count
+        release('g2', 'Official', 'CD'), // a non-vinyl match is ignored
+        release('g3', 'Promotion', 'Flexi-disc'),
+      ],
     });
   });
   const progress = [];
-  const result = await mb.getDiscography('a1', (loaded, total) => progress.push([loaded, total]));
-  assert.deepEqual(offsets, [0, 100]);
-  assert.deepEqual(progress, [[100, 120], [120, 120]]);
+  const result = await mb.getDiscography('a1', (step) => progress.push(step));
+
+  assert.deepEqual(calls.map((u) => `${u.pathname}@${u.searchParams.get('offset')}`),
+    ['/ws/2/release-group@0', '/ws/2/release-group@100', '/ws/2/release@0']);
+  assert.equal(calls[2].searchParams.get('query'), 'arid:"a1" AND format:(vinyl OR 7vinyl OR 10vinyl OR 12vinyl OR flexidisc)');
+  assert.deepEqual(progress, [
+    { step: 'releases', loaded: 100, total: 120 },
+    { step: 'releases', loaded: 120, total: 120 },
+    { step: 'vinyl', loaded: 5, total: 5 },
+  ]);
   assert.equal(result.groups.length, 120);
+  assert.deepEqual(result.groups.slice(0, 5).map((g) => g.vinyl), [2, 0, 0, 1, 0]);
   assert.equal(result.truncated, false);
+  assert.equal(result.vinylComplete, true);
 });
 
 test('network and server errors become readable messages', async (t) => {

@@ -521,10 +521,10 @@
       $('#disco-panel').hidden = true;
       setStatus('#artist-status', `Loading the discography for ${artist.name}…`, 'busy');
       try {
-        const fetched = await mb.getDiscography(artist.id, (loaded, total) => {
-          if (token === discoToken && total > 100) {
-            setStatus('#artist-status', `Loading the discography for ${artist.name}… ${loaded} of ${total}`, 'busy');
-          }
+        const fetched = await mb.getDiscography(artist.id, ({ step, loaded, total }) => {
+          if (token !== discoToken) return;
+          const doing = step === 'vinyl' ? 'Checking which releases came out on vinyl' : `Loading the discography for ${artist.name}`;
+          setStatus('#artist-status', total > 100 ? `${doing}… ${loaded} of ${total}` : `${doing}…`, 'busy');
         });
         data = store.saveDiscography(artist.id, { name: artist.name, ...fetched });
       } catch (e) {
@@ -554,32 +554,43 @@
   function renderDiscography() {
     if (!disco) return;
     const enabled = enabledCategories();
+    const vinylOnly = store.getPref('vinylOnly', true);
     const { items, unmatched } = S.compareDiscography(disco.groups, store.all(), disco.artist);
 
-    const presentCategories = S.CATEGORIES.filter((category) => disco.groups.some((g) => S.categoryOf(g) === category.key));
-    $('#disco-filters').replaceChildren(...presentCategories.map((category) => {
-      const count = disco.groups.filter((g) => S.categoryOf(g) === category.key).length;
-      return h('label', { class: 'toggle' },
+    // Records you own always count. With "Vinyl only" on, a missing one needs a vinyl pressing on MusicBrainz.
+    const eligible = items.filter((item) => !vinylOnly || item.records.length || item.group.vinyl > 0);
+    const countIn = (key) => eligible.filter((item) => S.categoryOf(item.group) === key).length;
+
+    $('#disco-filters').replaceChildren(
+      h('label', { class: 'toggle' },
+        h('input', { type: 'checkbox', checked: vinylOnly, onchange: (e) => { store.setPref('vinylOnly', e.target.checked); renderDiscography(); } }),
+        'Vinyl only'),
+      h('span', { class: 'toggle-divider', 'aria-hidden': 'true' }),
+      ...S.CATEGORIES.filter((category) => countIn(category.key)).map((category) => h('label', { class: 'toggle' },
         h('input', { type: 'checkbox', checked: enabled.has(category.key), onchange: (e) => toggleCategory(category.key, e.target.checked) }),
         category.label,
-        h('span', { class: 'toggle-count' }, count));
-    }));
+        h('span', { class: 'toggle-count' }, countIn(category.key)))));
 
-    const visible = items
+    const visible = eligible
       .filter((item) => enabled.has(S.categoryOf(item.group)))
       .sort((a, b) => compare(a.group.date || '9999', b.group.date || '9999'));
     const owned = visible.filter((item) => item.records.length);
     const missing = visible.filter((item) => !item.records.length);
     currentMissing = missing;
 
+    let progress = `You have ${owned.length} of ${visible.length}`;
+    if (!visible.length) {
+      if (!disco.groups.length) progress = 'MusicBrainz lists no releases for this artist yet.';
+      else if (vinylOnly && !eligible.length) progress = 'MusicBrainz lists no vinyl releases for this artist. Turn off Vinyl only to see everything.';
+      else progress = 'Nothing of these types. Turn on another type below.';
+    }
     $('#disco-name').textContent = disco.artist.name;
-    $('#disco-progress-text').textContent = visible.length
-      ? `You have ${owned.length} of ${visible.length}`
-      : disco.groups.length ? 'Nothing of these types. Turn on another type below.' : 'MusicBrainz lists no releases for this artist yet.';
+    $('#disco-progress-text').textContent = progress;
     $('#disco-bar').style.width = visible.length ? `${(owned.length / visible.length) * 100}%` : '0';
     $('#disco-updated').textContent = meta(
       `Updated ${ago(disco.fetchedAt)}`,
-      disco.truncated && `Showing the first ${disco.groups.length} of ${disco.total} releases`);
+      disco.truncated && `Showing the first ${disco.groups.length} of ${disco.total} releases`,
+      disco.vinylComplete === false && 'This artist has a huge number of vinyl releases, so a few may not be counted');
 
     const groupCover = (group) => cover({ releaseGroupId: group.id, artist: disco.artist.name, title: group.title }, 'sm');
 
@@ -589,7 +600,10 @@
       groupCover(group),
       h('div', { class: 'result-text' },
         h('span', { class: 'record-title' }, group.title),
-        h('span', { class: 'record-meta' }, meta(mb.yearOf(group.date), typeLabel(group)))),
+        h('span', { class: 'record-meta' }, meta(
+          mb.yearOf(group.date),
+          typeLabel(group),
+          group.vinyl ? plural(group.vinyl, 'vinyl release') : 'No vinyl listed'))),
       h('button', { type: 'button', onclick: () => addFromGroup(group) }, 'Got it'))));
     const missingEmpty = $('#disco-missing-empty');
     missingEmpty.hidden = missing.length > 0 || !visible.length;

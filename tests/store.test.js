@@ -95,6 +95,13 @@ test('discography cache expires after a week', (t) => {
   assert.equal(store.getDiscography('a1'), null);
 });
 
+test('discographies cached before vinyl counts existed are cleared', () => {
+  const storage = S.memoryStorage();
+  storage.setItem('recordcatalog.discographies.v1', '{"a1":{"groups":[]}}');
+  S.createStore(storage);
+  assert.equal(storage.getItem('recordcatalog.discographies.v1'), null);
+});
+
 test('categoryOf sorts release groups into filter buckets', () => {
   assert.equal(S.categoryOf({ primaryType: 'Album', secondaryTypes: [] }), 'album');
   assert.equal(S.categoryOf({ primaryType: 'EP' }), 'ep');

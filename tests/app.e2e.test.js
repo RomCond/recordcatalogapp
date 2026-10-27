@@ -41,6 +41,25 @@ const DISCOGRAPHIES = {
   ],
 };
 
+// Answers to the "vinyl releases by this artist" search. Pablo Honey only has a bootleg
+// and a CD that slipped into the results, so it should count as having no vinyl.
+const vinylRelease = (group, format, status = 'Official') => ({ status, 'release-group': { id: group }, media: [{ format }] });
+const VINYL_RELEASES = {
+  'a-radiohead': [
+    vinylRelease('rg-pablo', '12" Vinyl', 'Bootleg'),
+    vinylRelease('rg-pablo', 'CD'),
+    vinylRelease('rg-bends', '12" Vinyl'),
+    vinylRelease('rg-okc', '12" Vinyl'),
+    vinylRelease('rg-okc', '12" Vinyl'),
+    vinylRelease('rg-kida', '10" Vinyl'),
+    vinylRelease('rg-amnesiac', '10" Vinyl'),
+    vinylRelease('rg-amnesiac', '12" Vinyl'),
+    vinylRelease('rg-amnesiac', '12" Vinyl', 'Promotion'),
+    vinylRelease('rg-creep', '7" Vinyl'),
+  ],
+  'a-portishead': ['rg-dummy', 'rg-portishead', 'rg-third'].map((id) => vinylRelease(id, '12" Vinyl')),
+};
+
 function fakeMusicBrainz(url) {
   const params = url.searchParams;
   const query = params.get('query') || '';
@@ -55,6 +74,10 @@ function fakeMusicBrainz(url) {
         { ...rg('rg-oknotok', 'OK Computer OKNOTOK 1997 2017', '2017-06-23', 'Album', ['Compilation']), 'artist-credit': credit('Radiohead', 'a-radiohead') },
       ],
     };
+  }
+  if (url.pathname === '/ws/2/release' && query.startsWith('arid:')) {
+    const releases = VINYL_RELEASES[/arid:"([^"]+)"/.exec(query)[1]] || [];
+    return { count: releases.length, offset: 0, releases };
   }
   if (url.pathname === '/ws/2/release' && query.startsWith('barcode:')) {
     return {
@@ -196,7 +219,8 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     await page.fill('#edit-form [name=notes]', 'Found at a yard sale');
     await shot(page, '04-edit');
     await page.click('#edit-form button[value=save]');
-    assert.match(await text(page, '.record:has-text("Dummy")'), /CD/);
+    // The dialog's close event fires a moment after the click, so wait for the list to update.
+    await page.locator('.record', { hasText: 'Dummy' }).filter({ hasText: 'CD' }).waitFor();
     await page.locator('.record', { hasText: 'Dummy' }).click();
     await page.click('#edit-delete');
     assert.equal(await text(page, '#nav-count'), '4');
@@ -224,29 +248,40 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     await page.locator('.artist-group', { hasText: 'Radiohead' }).getByRole('button', { name: 'Discography' }).click();
     await page.locator('#disco-panel').waitFor();
     assert.equal(await text(page, '#disco-name'), 'Radiohead');
-    assert.equal(await text(page, '#disco-progress-text'), 'You have 3 of 5');
-    assert.equal(await text(page, '#missing-heading'), 'Missing (2)');
-    assert.match(await text(page, '#disco-missing'), /Pablo Honey[\s\S]*Amnesiac/);
+    // Vinyl only is on by default: Pablo Honey has no official vinyl, so it isn't listed as missing
+    assert.equal(await text(page, '#disco-progress-text'), 'You have 3 of 4');
+    assert.equal(await text(page, '#missing-heading'), 'Missing (1)');
+    assert.match(await text(page, '#disco-missing'), /Amnesiac\n2001 · Album · 3 vinyl releases/);
+    assert.doesNotMatch(await text(page, '#disco-panel'), /Pablo Honey/);
     assert.match(await text(page, '#disco-unmatched'), /Live at the Astoria/);
     await assertNoJunkText(page, 'discography');
     await shot(page, '06-discography');
 
+    // Turning it off shows everything
+    await page.locator('.toggle', { hasText: 'Vinyl only' }).click();
+    assert.equal(await text(page, '#disco-progress-text'), 'You have 3 of 5');
+    assert.match(await text(page, '#disco-missing'), /Pablo Honey\n1993 · Album · No vinyl listed/);
+    await page.locator('.toggle', { hasText: 'Vinyl only' }).click();
+    assert.equal(await text(page, '#disco-progress-text'), 'You have 3 of 4');
+
     await page.locator('#disco-missing .result', { hasText: 'Amnesiac' }).getByRole('button', { name: 'Got it' }).click();
-    assert.equal(await text(page, '#disco-progress-text'), 'You have 4 of 5');
+    assert.equal(await text(page, '#disco-progress-text'), 'You have 4 of 4');
+    assert.equal(await text(page, '#disco-missing-empty'), 'You have every one of these.');
     await page.locator('.toggle', { hasText: 'Singles' }).click();
-    assert.equal(await text(page, '#disco-progress-text'), 'You have 4 of 6');
+    assert.equal(await text(page, '#disco-progress-text'), 'You have 4 of 5');
 
     // Copy the missing list
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.click('#disco-copy');
-    await page.locator('#toast.show', { hasText: 'Copied 2 titles' }).waitFor();
+    await page.locator('#toast.show', { hasText: 'Copied 1 title' }).waitFor();
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'Radiohead - Creep (1992)');
 
     // Portishead has no id yet, so the app looks the name up once and remembers it
     const callsBefore = mbCalls.length;
     await page.selectOption('#disco-artist', { label: 'Portishead (1)' });
     await page.locator('#disco-name', { hasText: 'Portishead' }).waitFor();
     assert.equal(await text(page, '#disco-progress-text'), 'You have 1 of 3');
-    assert.deepEqual(mbCalls.slice(callsBefore).map((u) => u.pathname), ['/ws/2/artist', '/ws/2/release-group']);
+    assert.deepEqual(mbCalls.slice(callsBefore).map((u) => u.pathname), ['/ws/2/artist', '/ws/2/release-group', '/ws/2/release']);
     const linked = await page.evaluate(() => JSON.parse(localStorage.getItem('recordcatalog.records.v1')).find((r) => r.title === 'Dummy').artistId);
     assert.equal(linked, 'a-portishead');
 
@@ -261,7 +296,7 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     assert.equal(await text(page, '#nav-count'), '6');
     await page.goto(`${PAGE_URL}#discography`);
     await page.selectOption('#disco-artist', { label: 'Radiohead (5)' });
-    assert.equal(await text(page, '#disco-progress-text'), 'You have 4 of 6');
+    assert.equal(await text(page, '#disco-progress-text'), 'You have 4 of 5');
 
     // Backup, wipe, restore
     await page.click('a[href="#collection"]');

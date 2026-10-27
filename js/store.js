@@ -11,9 +11,10 @@
 
   const KEYS = {
     records: 'recordcatalog.records.v1',
-    discographies: 'recordcatalog.discographies.v1',
+    discographies: 'recordcatalog.discographies.v2', // v2 adds vinyl release counts
     prefs: 'recordcatalog.prefs.v1',
   };
+  const OLD_KEYS = ['recordcatalog.discographies.v1'];
 
   const FORMATS = ['LP', 'Double LP', 'EP', '7" single', '12" single', 'Box set', 'CD', 'Cassette', 'Other'];
 
@@ -218,6 +219,11 @@
     }
 
     let records = loadRecords();
+    for (const key of OLD_KEYS) {
+      try {
+        backend.removeItem(key);
+      } catch (ignored) {}
+    }
 
     function commit() {
       write(KEYS.records, records);

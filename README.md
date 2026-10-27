@@ -28,9 +28,12 @@ MusicBrainz allows about one request per second. The search box waits for a shor
 ## How "missing" is worked out
 
 1. The app fetches every album, EP and single credited to the artist on MusicBrainz.
-2. A record you added through search or barcode matches by its MusicBrainz release group id.
-3. A record you typed in by hand matches by title, ignoring case, accents, punctuation and notes like "(2009 Remaster)".
-4. Anything by that artist that matches nothing is listed under "Yours, but not matched" so you can fix the title.
+2. It also fetches the artist's vinyl releases (Vinyl, 7", 10" and 12" Vinyl, and Flexi-disc) and counts them per album. Bootlegs don't count.
+3. A record you added through search or barcode matches by its MusicBrainz release group id.
+4. A record you typed in by hand matches by title, ignoring case, accents, punctuation and notes like "(2009 Remaster)".
+5. Anything by that artist that matches nothing is listed under "Yours, but not matched" so you can fix the title.
+
+**Vinyl only** is on by default, so the missing list only shows releases that came out on vinyl, with how many vinyl releases each has. Records you already own always show. Turn it off to see everything, which helps when MusicBrainz is missing a pressing you know exists.
 
 Studio albums are shown by default. EPs, singles, live albums, compilations and other types can be switched on per artist.
 
