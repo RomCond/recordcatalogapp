@@ -95,13 +95,11 @@ test('discography cache expires after a week', (t) => {
   assert.equal(store.getDiscography('a1'), null);
 });
 
-test('discographies cached under older vinyl rules are cleared', () => {
+test('discographies cached under older rules are cleared', () => {
   const storage = S.memoryStorage();
-  storage.setItem('recordcatalog.discographies.v1', '{"a1":{"groups":[]}}');
-  storage.setItem('recordcatalog.discographies.v2', '{"a1":{"groups":[]}}');
+  for (const v of [1, 2, 3]) storage.setItem(`recordcatalog.discographies.v${v}`, '{"a1":{"groups":[]}}');
   S.createStore(storage);
-  assert.equal(storage.getItem('recordcatalog.discographies.v1'), null);
-  assert.equal(storage.getItem('recordcatalog.discographies.v2'), null);
+  for (const v of [1, 2, 3]) assert.equal(storage.getItem(`recordcatalog.discographies.v${v}`), null);
 });
 
 test('categoryOf sorts release groups into filter buckets', () => {
@@ -152,6 +150,26 @@ test('a 7" single goes to the single when an album shares its title', () => {
   ];
   const { items } = S.compareDiscography(groups, records, { id: 'b', name: 'The Beatles' });
   assert.deepEqual(items.map((item) => item.records.map((r) => r.id)), [['r2'], ['r1']]);
+});
+
+test('a deluxe edition is its own entry, right after the original', () => {
+  const weezer = { id: 'w', name: 'Weezer' };
+  const groups = [
+    { ...album('blue', 'Weezer', '1994'), vinyl: true },
+    { ...album('pink', 'Pinkerton', '1996'), vinyl: true, deluxe: { title: 'Pinkerton (Deluxe Edition)', date: '2010', vinyl: false, releaseIds: ['pink-dlx-cd'] } },
+  ];
+  const records = [
+    { id: 'r1', artist: 'Weezer', title: 'Pinkerton', releaseGroupId: 'pink', format: 'LP' },
+    { id: 'r2', artist: 'Weezer', title: 'Pinkerton (Deluxe Edition)', format: 'Double LP' }, // typed in by hand
+    { id: 'r3', artist: 'Weezer', title: 'Pinkerton', releaseGroupId: 'pink', releaseId: 'pink-dlx-cd', format: 'CD' }, // added by barcode
+    { id: 'r4', artist: 'Weezer', title: 'Weezer (Deluxe Edition)', format: 'LP' }, // no deluxe known for this one
+  ];
+  const { items } = S.compareDiscography(groups, records, weezer);
+  assert.deepEqual(items.map((item) => [item.key, item.title, item.vinyl, item.records.map((r) => r.id)]), [
+    ['blue', 'Weezer', true, ['r4']],
+    ['pink', 'Pinkerton', true, ['r1']],
+    ['pink:deluxe', 'Pinkerton (Deluxe Edition)', false, ['r2', 'r3']],
+  ]);
 });
 
 test('pickRandom avoids recent picks until it runs out of others', () => {

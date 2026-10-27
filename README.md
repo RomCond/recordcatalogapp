@@ -28,10 +28,11 @@ MusicBrainz allows about one request per second. The search box waits for a shor
 ## How "missing" is worked out
 
 1. The app fetches every album, EP and single credited to the artist on MusicBrainz.
-2. It also checks which of those albums have at least one vinyl pressing (Vinyl, 7", 10" or 12" Vinyl). Flexi-discs and bootlegs don't count.
-3. A record you added through search or barcode matches by its MusicBrainz release group id.
-4. A record you typed in by hand matches by title, ignoring case, accents, punctuation and notes like "(2009 Remaster)".
-5. Anything by that artist that matches nothing is listed under "Yours, but not matched" so you can fix the title.
+2. It also checks which of those albums have at least one vinyl pressing (Vinyl, 7", 10" or 12" Vinyl). Flexi-discs, VinylDisc hybrids and bootlegs don't count.
+3. Deluxe and expanded editions get their own line right after the original, since they add songs. MusicBrainz usually files them under the original album, so the app finds them by releases whose title or note says "deluxe" or "expanded". All of an album's deluxe releases fold into one line, and owning one edition doesn't tick off the other.
+4. A record you added through search or barcode matches by its MusicBrainz release group id.
+5. A record you typed in by hand matches by title, ignoring case, accents, punctuation and notes like "(2009 Remaster)". If its title says "Deluxe" or "Expanded", it goes on the deluxe line.
+6. Anything by that artist that matches nothing is listed under "Yours, but not matched" so you can fix the title.
 
 **Vinyl only** is on by default, so the missing list only shows albums that came out on vinyl, one line per album no matter how many pressings exist. Records you already own always show. Turn it off to see everything, which helps when MusicBrainz is missing a pressing you know exists.
 

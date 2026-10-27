@@ -11,10 +11,10 @@
 
   const KEYS = {
     records: 'recordcatalog.records.v1',
-    discographies: 'recordcatalog.discographies.v3', // v3: whether each release has a vinyl pressing
+    discographies: 'recordcatalog.discographies.v4', // v4: vinyl yes/no plus deluxe editions
     prefs: 'recordcatalog.prefs.v1',
   };
-  const OLD_KEYS = ['recordcatalog.discographies.v1', 'recordcatalog.discographies.v2'];
+  const OLD_KEYS = ['recordcatalog.discographies.v1', 'recordcatalog.discographies.v2', 'recordcatalog.discographies.v3'];
 
   const FORMATS = ['LP', 'Double LP', 'EP', '7" single', '12" single', 'Box set', 'CD', 'Cassette', 'Other'];
 
@@ -125,13 +125,27 @@
     return wantSingle && category === 'single' ? -1 : CATEGORY_RANK[category];
   }
 
+  // Deluxe and expanded editions add songs, so they get their own line next to the original.
+  // musicbrainz.js uses the same words to find them.
+  const DELUXE_WORDS = /\b(deluxe|expanded)\b/i;
+
+  function isDeluxeRecord(record, group) {
+    if (!group.deluxe) return false;
+    if (record.releaseId && group.deluxe.releaseIds.includes(record.releaseId)) return true;
+    return DELUXE_WORDS.test(record.title) && !DELUXE_WORDS.test(group.title);
+  }
+
   /*
-   * Lines up an artist's release groups with the records you own.
-   * A record matches by MusicBrainz release group id first, then by normalized title
-   * for records by the same artist (covers manual entries).
+   * Lines up an artist's release groups with the records you own. Each release group is one
+   * entry, plus a second one for its deluxe edition when it has one. A record matches by
+   * MusicBrainz release group id first, then by normalized title for records by the same
+   * artist (covers manual entries). Owning one edition doesn't count as owning the other.
    */
   function compareDiscography(groups, records, artist) {
-    const owned = new Map(groups.map((group) => [group.id, []]));
+    const byId = new Map(groups.map((group) => [group.id, group]));
+    const standard = new Map(groups.map((group) => [group.id, []]));
+    const deluxe = new Map(groups.filter((group) => group.deluxe).map((group) => [group.id, []]));
+    const place = (record, group) => (isDeluxeRecord(record, group) ? deluxe : standard).get(group.id).push(record);
     const byTitle = new Map();
     for (const group of groups) {
       const key = normTitle(group.title);
@@ -141,8 +155,8 @@
 
     const unmatched = [];
     for (const record of records) {
-      if (record.releaseGroupId && owned.has(record.releaseGroupId)) {
-        owned.get(record.releaseGroupId).push(record);
+      if (record.releaseGroupId && byId.has(record.releaseGroupId)) {
+        place(record, byId.get(record.releaseGroupId));
         continue;
       }
       if (!sameArtist(record, artist)) continue;
@@ -153,10 +167,21 @@
       }
       const wantSingle = SINGLE_FORMATS.includes(record.format);
       const best = candidates.slice().sort((a, b) => matchRank(a, wantSingle) - matchRank(b, wantSingle))[0];
-      owned.get(best.id).push(record);
+      place(record, best);
     }
 
-    return { items: groups.map((group) => ({ group, records: owned.get(group.id) })), unmatched };
+    const items = [];
+    for (const group of groups) {
+      items.push({
+        key: group.id, group, edition: 'standard', title: group.title, date: group.date, vinyl: Boolean(group.vinyl), records: standard.get(group.id),
+      });
+      if (group.deluxe) {
+        items.push({
+          key: `${group.id}:deluxe`, group, edition: 'deluxe', title: group.deluxe.title, date: group.deluxe.date, vinyl: Boolean(group.deluxe.vinyl), records: deluxe.get(group.id),
+        });
+      }
+    }
+    return { items, unmatched };
   }
 
   function pickRandom(pool, recentIds, random) {
