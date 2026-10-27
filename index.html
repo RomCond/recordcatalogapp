@@ -29,6 +29,10 @@
     <!-- Collection -->
     <section id="view-collection" class="view" aria-labelledby="collection-heading">
       <h1 id="collection-heading" class="view-title">Your collection</h1>
+      <nav class="segmented" aria-label="Lists">
+        <a href="#collection">Collection <span class="count" id="count-collection">0</span></a>
+        <a href="#wishlist">Wishlist <span class="count" id="count-wishlist">0</span></a>
+      </nav>
       <div class="toolbar" id="collection-tools">
         <input type="search" id="filter-text" placeholder="Search artist, title or notes" aria-label="Search your records">
         <select id="filter-format" aria-label="Filter by format"></select>
@@ -46,6 +50,12 @@
         <h2>Your shelf is empty</h2>
         <p class="muted">Search by artist, album or barcode and add a record in one tap.</p>
         <a class="button primary" href="#add">Add your first record</a>
+      </div>
+      <div class="empty" id="wishlist-empty" hidden>
+        <span class="empty-disc" aria-hidden="true"></span>
+        <h2>Nothing on your wishlist yet</h2>
+        <p class="muted">Open an artist's discography and tap Wishlist on the records you're hunting for.</p>
+        <a class="button primary" href="#discography">Go to Discography</a>
       </div>
       <div class="data-tools">
         <button type="button" id="export-btn">Export backup</button>

@@ -474,6 +474,53 @@ details.card[open] > summary::before { content: "\2212"; }
 .summary { margin: 0 0 10px; font-size: 0.925rem; }
 
 .list-card { padding: 10px; }
+.list-card .result { padding-left: 8px; padding-right: 8px; }
+
+/* Collection / Wishlist switch at the top of the Collection tab */
+.segmented {
+  display: flex;
+  gap: 4px;
+  max-width: 420px;
+  margin-bottom: 14px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.segmented a {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 9px;
+  color: var(--muted);
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+}
+
+.segmented a[aria-current="page"] {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+}
+
+/* Wishlist and Got it buttons stacked on each missing record */
+.actions {
+  display: grid;
+  gap: 6px;
+}
+
+button.wished {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.inline-link {
+  justify-self: start;
+  min-height: 32px;
+  margin-left: -8px;
+  padding: 2px 8px;
+}
 
 .artist-group + .artist-group {
   margin-top: 8px;

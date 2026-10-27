@@ -91,6 +91,14 @@ function fakeMusicBrainz(url) {
     const releases = (query.includes('format:') ? VINYL_RELEASES : DELUXE_RELEASES)[artistId] || [];
     return { count: releases.length, offset: 0, releases };
   }
+  if (url.pathname === '/ws/2/release' && query === 'barcode:0724384260927') {
+    return {
+      releases: [{
+        id: 'rel-pablo-cd', title: 'Pablo Honey', 'artist-credit': credit('Radiohead', 'a-radiohead'),
+        'release-group': { id: 'rg-pablo', 'primary-type': 'Album' }, media: [{ format: 'CD' }],
+      }],
+    };
+  }
   if (url.pathname === '/ws/2/release' && query.startsWith('barcode:')) {
     return {
       releases: [{
@@ -160,6 +168,19 @@ async function shot(page, name) {
 
 const text = (page, selector) => page.locator(selector).innerText();
 
+// Tabs only change the address; the app switches screens on the hashchange that follows,
+// so wait for that before reading anything.
+async function openTab(page, route) {
+  await page.click(route === 'wishlist' ? '.segmented a[href="#wishlist"]' : `.tabs a[href="#${route}"]`);
+  await page.waitForFunction((r) => {
+    const view = r === 'wishlist' ? 'collection' : r;
+    const heading = { collection: 'Your collection', wishlist: 'Your wishlist' }[r];
+    return location.hash === `#${r}`
+      && !document.querySelector(`#view-${view}`).hidden
+      && (!heading || document.querySelector('#collection-heading').textContent === heading);
+  }, route);
+}
+
 async function assertNoJunkText(page, where) {
   const shown = await page.locator('main').innerText();
   assert.doesNotMatch(shown, /\b(null|undefined|NaN)\b/, `stray placeholder text on ${where}`);
@@ -175,7 +196,7 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     await shot(page, '01-empty');
 
     // Results show up while typing part of a name, after one request rather than one per key
-    await page.click('a[href="#add"]');
+    await openTab(page, 'add');
     const searchBox = page.locator('#search-form [name=q]');
     const callsBeforeTyping = mbCalls.length;
     await searchBox.pressSequentially('radiohead ok comp', { delay: 40 });
@@ -201,6 +222,14 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     await page.locator('#search-results .result').getByRole('button', { name: 'Add' }).click();
     assert.equal(mbCalls.at(-1).searchParams.get('query'), 'barcode:0724352775324');
 
+    // The catalog is vinyl only: a CD's barcode is turned away, and CD and Cassette aren't formats
+    await searchBox.fill('0724384260927');
+    await searchBox.press('Enter');
+    await page.locator('#search-status', { hasText: 'That barcode is for a CD or cassette, not a vinyl record.' }).waitFor();
+    assert.equal(await page.locator('#search-results .result').count(), 0);
+    assert.deepEqual(await page.locator('#add-format option').allTextContents(), ['LP', 'Double LP', 'EP', '7" single', '12" single', 'Box set', 'Other']);
+    assert.deepEqual(await page.locator('#filter-format option').allTextContents(), ['All formats', ...['LP', 'Double LP', 'EP', '7" single', '12" single', 'Box set', 'Other']]);
+
     // Manual entry keeps the artist filled in for the next one
     await page.click('#manual-add summary');
     const manual = page.locator('#manual-form');
@@ -225,7 +254,7 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     assert.equal(await manual.locator('[name=title]').inputValue(), 'dummy');
 
     // Collection, grouped by artist
-    await page.click('a[href="#collection"]');
+    await openTab(page, 'collection');
     assert.equal(await text(page, '#collection-summary'), '5 records by 2 artists');
     assert.deepEqual(await page.locator('.artist-name').evaluateAll((els) => els.map((el) => el.firstChild.textContent)), ['Portishead', 'Radiohead']);
     assert.match(await text(page, '#collection-list'), /Kid A\n2000 · Double LP/);
@@ -237,12 +266,12 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     // Edit, delete, undo
     await page.locator('.record', { hasText: 'Dummy' }).click();
     assert.ok(await page.locator('#edit-dialog').isVisible());
-    await page.selectOption('#edit-form [name=format]', 'CD');
+    await page.selectOption('#edit-form [name=format]', 'Box set');
     await page.fill('#edit-form [name=notes]', 'Found at a yard sale');
     await shot(page, '04-edit');
     await page.click('#edit-form button[value=save]');
     // The dialog's close event fires a moment after the click, so wait for the list to update.
-    await page.locator('.record', { hasText: 'Dummy' }).filter({ hasText: 'CD' }).waitFor();
+    await page.locator('.record', { hasText: 'Dummy' }).filter({ hasText: 'Box set' }).waitFor();
     await page.locator('.record', { hasText: 'Dummy' }).click();
     await page.click('#edit-delete');
     assert.equal(await text(page, '#nav-count'), '4');
@@ -250,7 +279,7 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     assert.equal(await text(page, '#nav-count'), '5');
 
     // Random pick, with an artist filter
-    await page.click('a[href="#random"]');
+    await openTab(page, 'random');
     await page.selectOption('#random-artist', { label: 'Portishead' });
     await page.click('#spin-btn');
     assert.equal(await text(page, '.pick-title'), 'Dummy');
@@ -266,7 +295,7 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     await shot(page, '05-random');
 
     // Discography from the collection: Radiohead already has a MusicBrainz id
-    await page.click('a[href="#collection"]');
+    await openTab(page, 'collection');
     await page.locator('.artist-group', { hasText: 'Radiohead' }).getByRole('button', { name: 'Discography' }).click();
     await page.locator('#disco-panel').waitFor();
     assert.equal(await text(page, '#disco-name'), 'Radiohead');
@@ -275,7 +304,7 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     assert.equal(await text(page, '#disco-progress-text'), 'You have 3 of 5');
     assert.equal(await text(page, '#missing-heading'), 'Missing (2)');
     // One line per album, with no count of individual pressings
-    assert.equal(await text(page, '#disco-missing'), 'The Bends (Deluxe Edition)\n2009 · Album\nGot it\nAmnesiac\n2001 · Album\nGot it');
+    assert.equal(await text(page, '#disco-missing'), 'The Bends (Deluxe Edition)\n2009 · Album\nWishlist\nGot it\nAmnesiac\n2001 · Album\nWishlist\nGot it');
     assert.match(await text(page, '#disco-owned'), /^The Bends\n1995 · Album · You have: LP\nOK Computer/);
     assert.doesNotMatch(await text(page, '#disco-panel'), /Pablo Honey|Kid A \(Expanded/);
     assert.equal(await page.locator('.toggle', { hasText: 'Live' }).count(), 0, 'a flexi-disc alone should not count as vinyl');
@@ -291,10 +320,33 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     await page.locator('.toggle', { hasText: 'Vinyl only' }).click();
     assert.equal(await text(page, '#disco-progress-text'), 'You have 3 of 5');
 
-    await page.locator('#disco-missing .result', { hasText: 'Amnesiac' }).getByRole('button', { name: 'Got it' }).click();
+    // Wishlist from the discography: the button flips to "On wishlist", and tapping that takes it off again
+    const missingRow = (title) => page.locator('#disco-missing .result', { hasText: title });
+    const wishCount = () => page.locator('#count-wishlist').textContent();
+    await missingRow('Amnesiac').getByRole('button', { name: 'Wishlist', exact: true }).click();
+    await missingRow('The Bends (Deluxe Edition)').getByRole('button', { name: 'Wishlist', exact: true }).click();
+    assert.equal(await wishCount(), '2');
+    await missingRow('Amnesiac').getByRole('button', { name: 'On wishlist', exact: true }).click();
+    assert.equal(await wishCount(), '1');
+    await missingRow('Amnesiac').getByRole('button', { name: 'Wishlist', exact: true }).click();
+    assert.equal(await wishCount(), '2');
+    assert.equal(await text(page, '#disco-progress-text'), 'You have 3 of 5', 'wishlisted records still count as missing');
+
+    // Getting a wishlisted record takes it off the wishlist
+    await missingRow('Amnesiac').getByRole('button', { name: 'Got it' }).click();
     assert.equal(await text(page, '#disco-progress-text'), 'You have 4 of 5');
-    // Getting the deluxe edition ticks off the deluxe line, not the original
-    await page.locator('#disco-missing .result', { hasText: 'The Bends (Deluxe Edition)' }).getByRole('button', { name: 'Got it' }).click();
+    assert.equal(await wishCount(), '1');
+
+    // The wishlist lives in the Collection tab. Getting the deluxe edition from there ticks off
+    // the deluxe line, not the original.
+    await openTab(page, 'collection');
+    await openTab(page, 'wishlist');
+    assert.equal(await text(page, '#collection-heading'), 'Your wishlist');
+    assert.deepEqual(await page.locator('#collection-list .record-title').allTextContents(), ['The Bends (Deluxe Edition)']);
+    await page.locator('#collection-list .result').getByRole('button', { name: 'Got it' }).click();
+    await page.locator('#wishlist-empty').waitFor();
+    assert.equal(await text(page, '#nav-count'), '7');
+    await openTab(page, 'discography');
     assert.equal(await text(page, '#disco-progress-text'), 'You have 5 of 5');
     assert.match(await text(page, '#disco-owned'), /The Bends\n1995 · Album · You have: LP\nThe Bends \(Deluxe Edition\)\n2009 · Album · You have: LP/);
     assert.equal(await text(page, '#disco-missing-empty'), 'You have every one of these.');
@@ -306,6 +358,18 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     await page.click('#disco-copy');
     await page.locator('#toast.show', { hasText: 'Copied 1 title' }).waitFor();
     assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'Radiohead - Creep (1992)');
+
+    // Remove from the wishlist, then undo
+    await missingRow('Creep').getByRole('button', { name: 'Wishlist', exact: true }).click();
+    await openTab(page, 'collection');
+    await openTab(page, 'wishlist');
+    await page.locator('#collection-list .result', { hasText: 'Creep' }).getByRole('button', { name: 'Remove' }).click();
+    await page.locator('#wishlist-empty').waitFor();
+    await page.locator('#toast .toast-action').click();
+    assert.deepEqual(await page.locator('#collection-list .record-title').allTextContents(), ['Creep']);
+    await assertNoJunkText(page, 'wishlist');
+    await shot(page, '07-wishlist');
+    await openTab(page, 'discography');
 
     // Portishead has no id yet, so the app looks the name up once and remembers it
     const callsBefore = mbCalls.length;
@@ -330,16 +394,19 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     assert.equal(await text(page, '#disco-progress-text'), 'You have 5 of 6');
 
     // Backup, wipe, restore
-    await page.click('a[href="#collection"]');
+    await openTab(page, 'collection');
     const [download] = await Promise.all([page.waitForEvent('download'), page.click('#export-btn')]);
     const backupPath = await download.path();
-    assert.equal(JSON.parse(fs.readFileSync(backupPath, 'utf8')).records.length, 7);
+    const backup = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
+    assert.equal(backup.records.length, 7);
+    assert.deepEqual(backup.wishlist.map((w) => w.title), ['Creep']);
     await page.evaluate(() => localStorage.clear());
     await page.reload();
     assert.ok(await page.locator('#collection-empty').isVisible());
     await page.setInputFiles('#import-file', backupPath);
-    await page.locator('#toast.show', { hasText: 'Imported 7 records' }).waitFor();
+    await page.locator('#toast.show', { hasText: 'Imported 7 records and 1 for your wishlist' }).waitFor();
     assert.equal(await text(page, '#nav-count'), '7');
+    assert.equal(await wishCount(), '1');
 
     assert.deepEqual(errors, []);
     await context.close();
@@ -363,8 +430,12 @@ test('fits a phone screen in light and dark mode', { skip: !chromium && 'playwri
           id: `r${i}`, artist, artistId, title, year, releaseGroupId, format, notes: '', releaseId: null, addedAt: new Date(2024, 0, i + 1).toISOString(),
         }));
         localStorage.setItem('recordcatalog.records.v1', JSON.stringify(records));
+        localStorage.setItem('recordcatalog.wishlist.v1', JSON.stringify([{
+          id: 'w1', artist: 'Radiohead', artistId: 'a-radiohead', title: 'Amnesiac', year: 2001, releaseGroupId: 'rg-amnesiac',
+          format: 'LP', notes: '', releaseId: null, addedAt: new Date(2024, 1, 1).toISOString(),
+        }]));
       });
-      for (const view of ['collection', 'add', 'random', 'discography']) {
+      for (const view of ['collection', 'wishlist', 'add', 'random', 'discography']) {
         await page.goto(`${PAGE_URL}#${view}`);
         await page.reload();
         if (view === 'random') await page.click('#spin-btn');

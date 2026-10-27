@@ -33,8 +33,8 @@ test('formatFromMedia maps MusicBrainz media to collection formats', () => {
   assert.equal(formatFromMedia(['7" Vinyl'], 'Single'), '7" single');
   assert.equal(formatFromMedia(['12" Vinyl'], 'Single'), '12" single');
   assert.equal(formatFromMedia(['12" Vinyl'], 'EP'), 'EP');
-  assert.equal(formatFromMedia(['CD', 'Enhanced CD'], 'Album'), 'CD');
-  assert.equal(formatFromMedia(['Cassette'], 'Album'), 'Cassette');
+  assert.equal(formatFromMedia(['CD', 'Enhanced CD'], 'Album'), null, 'CDs are not a collection format');
+  assert.equal(formatFromMedia(['Cassette'], 'Album'), null, 'nor are cassettes');
   assert.equal(formatFromMedia(['CD', '12" Vinyl'], 'Album'), null);
   assert.equal(formatFromMedia(['VinylDisc'], 'Album'), null);
   assert.equal(formatFromMedia(['Flexi-disc'], 'Single'), null);
@@ -61,7 +61,7 @@ test('search looks for the text in titles and artist names, and maps results', a
       }],
     });
   });
-  const results = await mb.search('radiohead ok comp');
+  const { results } = await mb.search('radiohead ok comp');
   assert.equal(calls[0].pathname, '/ws/2/release-group');
   assert.equal(calls[0].searchParams.get('fmt'), 'json');
   assert.equal(calls[0].searchParams.get('query'),
@@ -95,24 +95,29 @@ test('equal scores put plain albums first, then EPs and singles, oldest first', 
       group('weaker-match', 80, 'Album', '1990'),
     ],
   }));
-  const results = await mb.search('radiohead');
+  const { results } = await mb.search('radiohead');
   assert.deepEqual(results.map((r) => r.releaseGroupId), ['early-album', 'later-album', 'ep', 'single', 'live', 'weaker-match']);
 });
 
-test('a barcode in the search box looks up the release', async (t) => {
+test('a barcode in the search box looks up vinyl pressings only', async (t) => {
   const calls = [];
+  const release = (id, note, ...formats) => ({ id, title: 'Pinkerton', disambiguation: note, 'release-group': { id: 'g1' }, media: formats.map((format) => ({ format })) });
   t.mock.method(globalThis, 'fetch', async (url) => {
     calls.push(new URL(url));
     return jsonResponse({
       releases: [
-        { id: 'r1', title: 'Pinkerton', disambiguation: 'deluxe edition', 'release-group': { id: 'g1' }, media: [{ format: '12" Vinyl' }] },
-        { id: 'r2', title: 'Pinkerton', disambiguation: 'Japan', 'release-group': { id: 'g1' }, media: [{ format: 'CD' }] },
+        release('r1', 'deluxe edition', '12" Vinyl'),
+        release('r2', 'Japan', 'CD'),
+        release('r3', '', 'Cassette'),
+        release('r4', 'bundle', 'CD', '12" Vinyl'),
       ],
     });
   });
-  const results = await mb.search('0 724352 775324');
+  const { results, hiddenNonVinyl } = await mb.search('0 724352 775324');
   assert.equal(calls[0].pathname, '/ws/2/release');
   assert.equal(calls[0].searchParams.get('query'), 'barcode:0724352775324');
+  assert.deepEqual(results.map((r) => r.releaseId), ['r1', 'r4'], 'the CD and the cassette are left out');
+  assert.equal(hiddenNonVinyl, 2);
   assert.deepEqual(results.map((r) => r.title), ['Pinkerton (deluxe edition)', 'Pinkerton'], 'only deluxe notes go in the title');
 });
 

@@ -127,7 +127,9 @@
   }
 
   // Returns the new record, or null after telling the person why it couldn't be added.
+  // Adding a record takes it off the wishlist; Undo puts it back there.
   function addWithUndo(input) {
+    const wish = store.findWish(input);
     let record;
     try {
       record = store.add(input);
@@ -135,17 +137,45 @@
       toast(e.message);
       return null;
     }
-    toast(`Added ${record.title}`, { label: 'Undo', run: () => store.remove(record.id) });
+    toast(`Added ${record.title}`, {
+      label: 'Undo',
+      run: () => {
+        store.remove(record.id);
+        if (wish) store.addToWishlist(wish);
+      },
+    });
     return record;
+  }
+
+  function wishWithUndo(input) {
+    let wish;
+    try {
+      wish = store.addToWishlist(input);
+    } catch (e) {
+      toast(e.message);
+      return null;
+    }
+    toast(`Added ${wish.title} to your wishlist`, { label: 'Undo', run: () => store.removeFromWishlist(wish.id) });
+    return wish;
+  }
+
+  function unwishWithUndo(wish) {
+    store.removeFromWishlist(wish.id);
+    toast(`Removed ${wish.title} from your wishlist`, { label: 'Undo', run: () => store.addToWishlist(wish) });
   }
 
   // ---------- Navigation ----------
 
   const VIEWS = ['collection', 'add', 'random', 'discography'];
 
+  // #wishlist is the Collection tab showing the wishlist instead of your records.
+  function currentRoute() {
+    const route = location.hash.slice(1);
+    return route === 'wishlist' || VIEWS.includes(route) ? route : 'collection';
+  }
+
   function currentView() {
-    const view = location.hash.slice(1);
-    return VIEWS.includes(view) ? view : 'collection';
+    return currentRoute() === 'wishlist' ? 'collection' : currentRoute();
   }
 
   function showView() {
@@ -156,12 +186,13 @@
       if (name === view) link.setAttribute('aria-current', 'page');
       else link.removeAttribute('aria-current');
     }
+    if (view === 'collection') renderCollection();
     if (view === 'random') renderRandomFilters();
     if (view === 'discography') renderDiscoArtists();
     window.scrollTo(0, 0);
   }
 
-  // ---------- Collection ----------
+  // ---------- Collection and wishlist ----------
 
   const SORTS = {
     artist: (a, b) => compare(S.normArtist(a.artist), S.normArtist(b.artist)) || byYear(a, b) || compare(S.normTitle(a.title), S.normTitle(b.title)),
@@ -179,17 +210,43 @@
           h('span', { class: 'record-meta' }, meta(showArtist && record.artist, record.year, record.format)))));
   }
 
+  function wishRow(wish, showArtist) {
+    return h('li', { class: 'result' },
+      cover(wish, 'sm'),
+      h('div', { class: 'result-text' },
+        h('span', { class: 'record-title' }, wish.title),
+        h('span', { class: 'record-meta' }, meta(showArtist && wish.artist, wish.year)),
+        h('button', { type: 'button', class: 'link small inline-link', onclick: () => unwishWithUndo(wish) }, 'Remove')),
+      h('button', { type: 'button', onclick: () => gotWish(wish) }, 'Got it'));
+  }
+
+  // Moves a wishlist record into the collection, in the format chosen under "Add as".
+  function gotWish(wish) {
+    addWithUndo({ ...wish, id: null, addedAt: null, format: $('#add-format').value });
+  }
+
   function renderCollection() {
-    const all = store.all();
-    $('#nav-count').textContent = all.length;
-    $('#collection-empty').hidden = all.length > 0;
+    const wishlistMode = currentRoute() === 'wishlist';
+    const records = store.all();
+    const all = wishlistMode ? store.wishlist() : records;
+    $('#nav-count').textContent = records.length;
+    $('#count-collection').textContent = records.length;
+    $('#count-wishlist').textContent = store.wishlist().length;
+    $('#collection-heading').textContent = wishlistMode ? 'Your wishlist' : 'Your collection';
+    for (const link of document.querySelectorAll('.segmented a')) {
+      if (link.getAttribute('href') === (wishlistMode ? '#wishlist' : '#collection')) link.setAttribute('aria-current', 'page');
+      else link.removeAttribute('aria-current');
+    }
+    $('#filter-format').hidden = wishlistMode;
+    $('#collection-empty').hidden = wishlistMode || all.length > 0;
+    $('#wishlist-empty').hidden = !wishlistMode || all.length > 0;
     $('#collection-tools').hidden = all.length === 0;
     $('#collection-list').hidden = all.length === 0;
     $('#collection-summary').hidden = all.length === 0;
     if (!all.length) return;
 
     const query = S.fold($('#filter-text').value.trim());
-    const format = $('#filter-format').value;
+    const format = wishlistMode ? '' : $('#filter-format').value;
     const sort = $('#sort').value;
     const list = all
       .filter((r) => !format || r.format === format)
@@ -207,8 +264,10 @@
       return;
     }
 
+    const row = wishlistMode ? wishRow : recordRow;
+    const listClass = wishlistMode ? 'results' : 'records';
     if (sort !== 'artist') {
-      target.replaceChildren(h('ul', { class: 'records' }, list.map((r) => recordRow(r, true))));
+      target.replaceChildren(h('ul', { class: listClass }, list.map((r) => row(r, true))));
       return;
     }
 
@@ -223,7 +282,7 @@
       h('div', { class: 'artist-head' },
         h('h2', { class: 'artist-name' }, group.name, h('span', { class: 'artist-count' }, group.records.length)),
         h('button', { type: 'button', class: 'link small', onclick: () => goToDiscography(group.name) }, 'Discography')),
-      h('ul', { class: 'records' }, group.records.map((r) => recordRow(r, false))))));
+      h('ul', { class: listClass }, group.records.map((r) => row(r, false))))));
   }
 
   // ---------- Edit dialog ----------
@@ -318,10 +377,13 @@
     // The previous results stay up until the new ones arrive, so the list doesn't flicker while typing.
     setStatus('#search-status', mb.looksLikeBarcode(text) ? 'Looking up that barcode…' : 'Searching…', 'busy');
     try {
-      const found = await mb.search(text, controller.signal);
+      const { results: found, hiddenNonVinyl } = await mb.search(text, controller.signal);
       if (controller !== searchController) return;
       results = found;
-      setStatus('#search-status', found.length ? '' : 'Nothing found. Try fewer words, check the spelling, or add it by hand below.');
+      let note = '';
+      if (!found.length && hiddenNonVinyl) note = 'That barcode is for a CD or cassette, not a vinyl record.';
+      else if (!found.length) note = 'Nothing found. Try fewer words, check the spelling, or add it by hand below.';
+      setStatus('#search-status', note);
       renderResults();
     } catch (e) {
       if (e.name === 'AbortError' || controller !== searchController) return;
@@ -335,7 +397,7 @@
       cover(result, 'sm'),
       h('div', { class: 'result-text' },
         h('span', { class: 'record-title' }, result.title),
-        h('span', { class: 'record-meta' }, meta(result.artist, result.year, typeLabel(result), result.media))),
+        h('span', { class: 'record-meta' }, meta(result.artist, result.year, typeLabel(result), result.media, store.findWish(result) && 'On your wishlist'))),
       store.findCopy(result)
         ? h('button', { type: 'button', disabled: true }, 'In collection')
         : h('button', { type: 'button', class: 'primary', onclick: () => addFromResult(result) }, 'Add'))));
@@ -614,12 +676,20 @@
 
     $('#missing-heading').textContent = `Missing (${missing.length})`;
     $('#disco-copy').hidden = !missing.length;
-    $('#disco-missing').replaceChildren(...missing.map((item) => h('li', { class: 'result' },
-      itemCover(item),
-      h('div', { class: 'result-text' },
-        h('span', { class: 'record-title' }, item.title),
-        h('span', { class: 'record-meta' }, meta(mb.yearOf(item.date), typeLabel(item.group), !item.vinyl && 'No vinyl listed'))),
-      h('button', { type: 'button', onclick: () => addFromItem(item) }, 'Got it'))));
+    $('#disco-missing').replaceChildren(...missing.map((item) => {
+      const input = itemInput(item);
+      const wish = store.findWish(input);
+      return h('li', { class: 'result' },
+        itemCover(item),
+        h('div', { class: 'result-text' },
+          h('span', { class: 'record-title' }, item.title),
+          h('span', { class: 'record-meta' }, meta(mb.yearOf(item.date), typeLabel(item.group), !item.vinyl && 'No vinyl listed'))),
+        h('div', { class: 'actions' },
+          wish
+            ? h('button', { type: 'button', class: 'small wished', onclick: () => unwishWithUndo(wish) }, 'On wishlist')
+            : h('button', { type: 'button', class: 'small', onclick: () => wishWithUndo(input) }, 'Wishlist'),
+          h('button', { type: 'button', class: 'small', onclick: () => addWithUndo({ ...input, format: $('#add-format').value }) }, 'Got it')));
+    }));
     const missingEmpty = $('#disco-missing-empty');
     missingEmpty.hidden = missing.length > 0 || !visible.length;
     missingEmpty.textContent = 'You have every one of these.';
@@ -636,16 +706,16 @@
     $('#disco-unmatched').replaceChildren(...unmatched.map((r) => recordRow(r, false)));
   }
 
-  // The deluxe title ("... (Deluxe Edition)") is what files the new record under the deluxe line.
-  function addFromItem(item) {
-    addWithUndo({
+  // A discography line as a record. The deluxe title ("... (Deluxe Edition)") is what files it
+  // under the deluxe line.
+  function itemInput(item) {
+    return {
       artist: disco.artist.name,
       artistId: disco.artist.id,
       title: item.title,
       year: mb.yearOf(item.date),
-      format: $('#add-format').value,
       releaseGroupId: item.group.id,
-    });
+    };
   }
 
   async function copyMissing() {
@@ -677,8 +747,11 @@
     event.target.value = '';
     if (!file) return;
     try {
-      const { added, skipped } = store.importJSON(await file.text());
-      toast(skipped ? `Imported ${plural(added, 'record')}. Skipped ${skipped} already here or incomplete.` : `Imported ${plural(added, 'record')}`);
+      const { added, skipped, wishes } = store.importJSON(await file.text());
+      let message = `Imported ${plural(added, 'record')}`;
+      if (wishes) message += ` and ${wishes} for your wishlist`;
+      if (skipped) message += `. Skipped ${skipped} already here or incomplete.`;
+      toast(message);
     } catch (e) {
       toast(e.message);
     }
