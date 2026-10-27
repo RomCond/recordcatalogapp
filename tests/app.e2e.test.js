@@ -429,50 +429,23 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
   }
 });
 
-test('the Theme picker changes colors and fonts and remembers them', { skip: !chromium && 'playwright is not installed' }, async () => {
+test('uses Inter Tight and Inter, and follows the phone\'s light or dark setting', { skip: !chromium && 'playwright is not installed' }, async () => {
   const browser = await chromium.launch();
   try {
-    const { context, page, errors } = await openApp(browser, { colorScheme: 'light' });
-    const look = () => page.evaluate(() => ['data-palette', 'data-font', 'data-scheme'].map((a) => document.documentElement.getAttribute(a)));
-    assert.deepEqual(await look(), ['orange', 'classic', 'light']);
-
-    await page.click('#theme-btn');
-    assert.ok(await page.locator('#look-dialog').isVisible());
-    assert.deepEqual(await page.locator('#look-palette .look-choice').allTextContents(), ['Burnt orange', 'Cobalt', 'Olive', 'Magenta']);
-    assert.deepEqual(await page.locator('#look-font .look-choice').allTextContents(), ['Classic', 'Jazz label', 'Quiet', 'Catalog', 'Retro', 'Modern', 'Poster']);
-
-    // Choices apply right away
-    await page.locator('#look-palette .look-choice', { hasText: 'Cobalt' }).click();
-    await page.locator('#look-font .look-choice', { hasText: 'Poster' }).click();
-    await page.locator('#look-mode .look-choice', { hasText: 'Dark' }).click();
-    assert.deepEqual(await look(), ['cobalt', 'poster', 'dark']);
-    const styles = await page.evaluate(() => {
-      const heading = getComputedStyle(document.querySelector('#look-heading'));
-      return { font: heading.fontFamily, transform: heading.textTransform, bg: getComputedStyle(document.body).backgroundColor };
-    });
-    assert.match(styles.font, /^Oswald/);
-    assert.equal(styles.transform, 'uppercase');
-    assert.equal(styles.bg, 'rgb(12, 17, 28)', 'cobalt dark background');
-    // Each swatch shows its own palette, whatever the page is using
-    const swatchAccent = await page.locator('#look-palette .swatch[data-palette="magenta"]').evaluate((el) => getComputedStyle(el).getPropertyValue('--accent').trim());
-    assert.equal(swatchAccent, '#ff5fae');
-    await shot(page, 'theme-picker');
-    await page.click('#look-dialog button[value=done]');
-    assert.ok(!(await page.locator('#look-dialog').isVisible()));
-
-    // Remembered after a reload, and applied before the app's own scripts run
-    await page.reload();
-    assert.deepEqual(await look(), ['cobalt', 'poster', 'dark']);
-
-    // "Match device" follows the system setting
-    await page.click('#theme-btn');
-    await page.locator('#look-mode .look-choice', { hasText: 'Match device' }).click();
-    assert.deepEqual(await look(), ['cobalt', 'poster', 'light']);
-    await page.emulateMedia({ colorScheme: 'dark' });
-    await page.waitForFunction(() => document.documentElement.getAttribute('data-scheme') === 'dark');
-
-    assert.deepEqual(errors, []);
-    await context.close();
+    for (const [colorScheme, background] of [['light', 'rgb(244, 238, 229)'], ['dark', 'rgb(21, 18, 15)']]) {
+      const { context, page, errors } = await openApp(browser, { colorScheme });
+      const styles = await page.evaluate(() => ({
+        heading: getComputedStyle(document.querySelector('#collection-heading')).fontFamily,
+        body: getComputedStyle(document.body).fontFamily,
+        background: getComputedStyle(document.body).backgroundColor,
+      }));
+      assert.match(styles.heading, /^"?Inter Tight"?,/);
+      assert.match(styles.body, /^"?Inter"?,/);
+      assert.equal(styles.background, background, `${colorScheme} background`);
+      assert.equal(await page.locator('#theme-btn, #look-dialog').count(), 0, 'there is no theme picker');
+      assert.deepEqual(errors, []);
+      await context.close();
+    }
   } finally {
     await browser.close();
   }
