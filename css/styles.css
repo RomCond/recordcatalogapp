@@ -311,13 +311,6 @@ button.small {
   .toolbar select { width: 100%; }
 }
 
-.search-form {
-  display: grid;
-  grid-template-columns: 1fr 1fr auto;
-  align-items: end;
-  gap: 10px;
-}
-
 .inline-form {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -325,15 +318,7 @@ button.small {
   gap: 10px;
 }
 
-.barcode-form {
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px dashed var(--line);
-}
-
-@media (max-width: 560px) {
-  .search-form { grid-template-columns: 1fr; }
-}
+.hint { margin: 8px 0 0; }
 
 .add-as {
   display: flex;

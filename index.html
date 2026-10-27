@@ -58,19 +58,16 @@
     <section id="view-add" class="view" aria-labelledby="add-heading" hidden>
       <h1 id="add-heading" class="view-title">Add a record</h1>
       <div class="card">
-        <form id="search-form" class="search-form">
-          <label class="field"><span>Artist</span><input name="artist" autocomplete="off" placeholder="Radiohead"></label>
-          <label class="field"><span>Album</span><input name="album" autocomplete="off" placeholder="OK Computer"></label>
+        <form id="search-form" class="inline-form" role="search">
+          <label class="field"><span>Find a record</span>
+            <input type="search" name="q" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" placeholder="Album, artist, or barcode">
+          </label>
           <button type="submit" class="primary">Search</button>
         </form>
-        <form id="barcode-form" class="inline-form barcode-form">
-          <label class="field"><span>Or type the barcode from the sleeve</span><input name="barcode" inputmode="numeric" autocomplete="off" placeholder="12 or 13 digits"></label>
-          <button type="submit">Look up</button>
-        </form>
+        <p class="muted small hint">Type any part of a name, like "ok comp" or "radiohead kid", or the barcode from the sleeve. Results show up as you type.</p>
         <div class="add-as">
           <label for="add-format">Add as</label>
           <select id="add-format"></select>
-          <span class="muted small">Barcode matches use the format MusicBrainz lists.</span>
         </div>
         <p class="status" id="search-status" role="status" hidden></p>
         <ul class="results" id="search-results"></ul>

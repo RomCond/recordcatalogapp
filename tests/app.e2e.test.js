@@ -139,12 +139,15 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     assert.ok(await page.locator('#collection-empty').isVisible());
     await shot(page, '01-empty');
 
-    // Search MusicBrainz and add
+    // Results show up while typing part of a name, after one request rather than one per key
     await page.click('a[href="#add"]');
-    await page.fill('#search-form [name=artist]', 'Radiohead');
-    await page.fill('#search-form [name=album]', 'OK Computer');
-    await page.click('#search-form button[type=submit]');
+    const searchBox = page.locator('#search-form [name=q]');
+    const callsBeforeTyping = mbCalls.length;
+    await searchBox.pressSequentially('radiohead ok comp', { delay: 40 });
     await page.locator('#search-results .result').first().waitFor();
+    const typedSearches = mbCalls.slice(callsBeforeTyping);
+    assert.equal(typedSearches.length, 1, `typing sent ${typedSearches.length} searches`);
+    assert.match(typedSearches[0].searchParams.get('query'), /artist:\(radiohead ok comp comp\*\)/);
     assert.equal(await page.locator('#search-results .result').count(), 2);
     await page.locator('#search-results .result').first().getByRole('button', { name: 'Add' }).click();
     await page.locator('#toast.show', { hasText: 'Added OK Computer' }).waitFor();
@@ -152,9 +155,9 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     assert.equal(await text(page, '#search-results .result:first-child .badge'), 'In collection');
     await shot(page, '02-search');
 
-    // Barcode lookup picks the format from the release
-    await page.fill('#barcode-form [name=barcode]', '0 724352 775324');
-    await page.click('#barcode-form button[type=submit]');
+    // The same box takes a barcode, and the lookup picks the format from the release
+    await searchBox.fill('0 724352 775324');
+    await searchBox.press('Enter');
     await page.locator('#search-results .result', { hasText: 'Kid A' }).waitFor();
     assert.match(await text(page, '#search-results .result'), /2 x 10" Vinyl/);
     await page.locator('#search-results .result').getByRole('button', { name: 'Add' }).click();

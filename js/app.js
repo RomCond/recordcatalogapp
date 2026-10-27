@@ -256,22 +256,59 @@
 
   // ---------- Add ----------
 
+  // Search waits for a short pause in typing. MusicBrainz allows about one request a second,
+  // so a search per keystroke would just queue up.
+  const SEARCH_DELAY_MS = 450;
   let results = [];
-  let searchToken = 0;
+  let searchTimer = null;
+  let searchController = null;
+  let lastQuery = '';
 
-  async function runSearch(task, label) {
-    const token = ++searchToken;
-    results = [];
-    renderResults();
-    setStatus('#search-status', label, 'busy');
+  function searchText() {
+    return $('#search-form').elements.q.value.trim();
+  }
+
+  // Short numbers are titles like "1989". Longer ones wait until they are a whole barcode.
+  function readyToSearch(text) {
+    const digits = text.replace(/[\s-]/g, '');
+    if (/^\d+$/.test(digits)) return digits.length <= 4 || mb.looksLikeBarcode(text);
+    return text.length >= 2;
+  }
+
+  function onSearchInput() {
+    clearTimeout(searchTimer);
+    const text = searchText();
+    if (!text) {
+      if (searchController) searchController.abort();
+      searchController = null;
+      lastQuery = '';
+      results = [];
+      renderResults();
+      setStatus('#search-status', '');
+      return;
+    }
+    if (readyToSearch(text)) searchTimer = setTimeout(() => runSearch(text), SEARCH_DELAY_MS);
+  }
+
+  async function runSearch(text) {
+    clearTimeout(searchTimer);
+    if (text === lastQuery) return;
+    lastQuery = text;
+    if (searchController) searchController.abort();
+    const controller = new AbortController();
+    searchController = controller;
+    // The previous results stay up until the new ones arrive, so the list doesn't flicker while typing.
+    setStatus('#search-status', mb.looksLikeBarcode(text) ? 'Looking up that barcode…' : 'Searching…', 'busy');
     try {
-      const found = await task();
-      if (token !== searchToken) return;
+      const found = await mb.search(text, controller.signal);
+      if (controller !== searchController) return;
       results = found;
       setStatus('#search-status', found.length ? '' : 'Nothing found. Try fewer words, check the spelling, or add it by hand below.');
       renderResults();
     } catch (e) {
-      if (token === searchToken) setStatus('#search-status', e.message, 'error');
+      if (e.name === 'AbortError' || controller !== searchController) return;
+      lastQuery = ''; // let the same search be tried again
+      setStatus('#search-status', e.message, 'error');
     }
   }
 
@@ -303,24 +340,13 @@
 
   function onSearchSubmit(event) {
     event.preventDefault();
-    const fields = event.target.elements;
-    const artist = fields.artist.value.trim();
-    const title = fields.album.value.trim();
-    if (!artist && !title) {
-      setStatus('#search-status', 'Type an artist, an album title, or both.', 'error');
+    const text = searchText();
+    if (!text) {
+      setStatus('#search-status', 'Type part of an album or artist name, or a barcode.', 'error');
       return;
     }
-    runSearch(() => mb.searchReleaseGroups({ artist, title }), 'Searching MusicBrainz…');
-  }
-
-  function onBarcodeSubmit(event) {
-    event.preventDefault();
-    const code = event.target.elements.barcode.value.replace(/\D/g, '');
-    if (code.length < 8) {
-      setStatus('#search-status', 'Barcodes are usually 12 or 13 digits. Check the number on the back of the sleeve.', 'error');
-      return;
-    }
-    runSearch(() => mb.searchBarcode(code), 'Looking up that barcode…');
+    event.target.elements.q.blur(); // closes the phone keyboard so the results are visible
+    runSearch(text);
   }
 
   function onManualSubmit(event) {
@@ -660,7 +686,7 @@
   });
 
   $('#search-form').addEventListener('submit', onSearchSubmit);
-  $('#barcode-form').addEventListener('submit', onBarcodeSubmit);
+  $('#search-form').elements.q.addEventListener('input', onSearchInput);
   $('#manual-form').addEventListener('submit', onManualSubmit);
   $('#add-format').addEventListener('change', (e) => store.setPref('addFormat', e.target.value));
 

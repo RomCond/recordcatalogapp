@@ -20,10 +20,14 @@
   let queue = Promise.resolve();
   let lastCall = 0;
 
-  function throttled(task) {
+  const abortError = () => new DOMException('Search cancelled', 'AbortError');
+
+  // A call cancelled while it waits its turn never reaches MusicBrainz, so it doesn't use up the rate limit.
+  function throttled(task, signal) {
     const run = queue.then(async () => {
       const wait = lastCall + MIN_GAP_MS - Date.now();
-      if (wait > 0) await sleep(wait);
+      if (wait > 0 && !(signal && signal.aborted)) await sleep(wait);
+      if (signal && signal.aborted) throw abortError();
       lastCall = Date.now();
       return task();
     });
@@ -31,7 +35,7 @@
     return run;
   }
 
-  async function get(path, params) {
+  async function get(path, params, signal) {
     const url = new URL(path, API);
     for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
     url.searchParams.set('fmt', 'json');
@@ -39,8 +43,9 @@
     for (let attempt = 0; attempt < 3; attempt++) {
       let res;
       try {
-        res = await throttled(() => fetch(url));
+        res = await throttled(() => fetch(url, { signal }), signal);
       } catch (e) {
+        if (e.name === 'AbortError') throw e;
         throw new Error("Couldn't reach MusicBrainz. Check your connection and try again.");
       }
       if (res.ok) return res.json();
@@ -53,9 +58,17 @@
 
   // ---------- Search query building (Lucene syntax) ----------
 
+  function escapeWord(word) {
+    return word.replace(/([+\-!(){}[\]^"~*?:\\/]|&&|\|\|)/g, '\\$1');
+  }
+
   // Lowercasing keeps words like AND, OR and NOT in a title from acting as operators.
-  function escapeTerms(text) {
-    return text.toLowerCase().replace(/([+\-!(){}[\]^"~*?:\\/]|&&|\|\|)/g, '\\$1');
+  // With prefixLast, a half-typed last word also matches as a prefix, so "radioh" finds "Radiohead".
+  function terms(text, prefixLast) {
+    const words = text.toLowerCase().split(/\s+/).filter(Boolean).map(escapeWord);
+    const last = words[words.length - 1];
+    if (prefixLast && last && last.length >= 3) words.push(`${last}*`);
+    return words.join(' ');
   }
 
   function phrase(text) {
@@ -63,8 +76,20 @@
   }
 
   // An exact phrase match ranks first; loose word matches still show up below it.
-  function field(name, text) {
-    return `(${name}:${phrase(text)}^3 OR ${name}:(${escapeTerms(text)}))`;
+  function field(name, text, prefixLast) {
+    return `(${name}:${phrase(text.trim())}^3 OR ${name}:(${terms(text, prefixLast)}))`;
+  }
+
+  // 8 to 14 digits (spaces and dashes allowed) is a barcode. Shorter numbers are titles like "1989".
+  function looksLikeBarcode(text) {
+    return /^\d{8,14}$/.test(text.replace(/[\s-]/g, ''));
+  }
+
+  // Tiebreak for results MusicBrainz scores the same: plain albums, then EPs, singles, and the rest.
+  function typeRank(group) {
+    if ((group['secondary-types'] || []).length) return 3;
+    const rank = { Album: 0, EP: 1, Single: 2 }[group['primary-type']];
+    return rank === undefined ? 4 : rank;
   }
 
   // ---------- Response mapping ----------
@@ -104,12 +129,15 @@
 
   // ---------- Public calls ----------
 
-  async function searchReleaseGroups({ artist = '', title = '' }) {
-    const parts = [];
-    if (artist.trim()) parts.push(field('artist', artist.trim()));
-    if (title.trim()) parts.push(field('releasegroup', title.trim()));
-    const data = await get('release-group', { query: parts.join(' AND '), limit: 25 });
-    return (data['release-groups'] || []).map((group) => ({
+  // Free text matched against both album titles and artist names, so any part of either works.
+  async function searchReleaseGroups(text, signal) {
+    const query = ['releasegroup', 'artist'].map((name) => field(name, text, true)).join(' OR ');
+    const data = await get('release-group', { query, limit: 40 }, signal);
+    const groups = (data['release-groups'] || []).slice().sort((a, b) =>
+      (b.score || 0) - (a.score || 0)
+      || typeRank(a) - typeRank(b)
+      || (a['first-release-date'] || '9999').localeCompare(b['first-release-date'] || '9999'));
+    return groups.map((group) => ({
       releaseGroupId: group.id,
       releaseId: null,
       title: group.title,
@@ -123,8 +151,8 @@
     }));
   }
 
-  async function searchBarcode(barcode) {
-    const data = await get('release', { query: `barcode:${barcode}`, limit: 10 });
+  async function searchBarcode(barcode, signal) {
+    const data = await get('release', { query: `barcode:${barcode}`, limit: 10 }, signal);
     return (data.releases || []).map((release) => {
       const group = release['release-group'] || {};
       const media = (release.media || []).map((medium) => medium.format).filter(Boolean);
@@ -141,6 +169,11 @@
         media: mediaLabel(media),
       };
     });
+  }
+
+  // What the single search box on the Add page calls.
+  function search(text, signal) {
+    return looksLikeBarcode(text) ? searchBarcode(text.replace(/\D/g, ''), signal) : searchReleaseGroups(text, signal);
   }
 
   async function searchArtists(name) {
@@ -183,9 +216,11 @@
   }
 
   return {
+    search,
     searchReleaseGroups,
     searchBarcode,
     searchArtists,
+    looksLikeBarcode,
     getDiscography,
     coverUrl,
     yearOf,
