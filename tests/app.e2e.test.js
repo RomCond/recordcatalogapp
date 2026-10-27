@@ -122,8 +122,27 @@ function fakeMusicBrainz(url) {
   return { error: 'not in fixture' };
 }
 
+const coverHue = (id) => [...id].reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % 360;
+
+// The rgb() a sample cover's background color comes out as.
+function coverRgb(id) {
+  const h = coverHue(id) / 360;
+  const s = 0.45;
+  const l = 0.45;
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const channel = (t) => {
+    t = (t + 1) % 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  return [h + 1 / 3, h, h - 1 / 3].map((t) => Math.round(channel(t) * 255));
+}
+
 function fakeCover(id) {
-  const hue = [...id].reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % 360;
+  const hue = coverHue(id);
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="hsl(${hue} 45% 45%)"/><text x="8" y="90" font-family="Georgia" font-size="12" fill="#fff">${id}</text></svg>`;
 }
 
@@ -146,7 +165,7 @@ async function openApp(browser, options = {}) {
     coverCalls.push(route.request().url());
     const id = route.request().url().split('/release-group/')[1].split('/')[0];
     if (['rg-okc', 'rg-kida', 'rg-dummy', 'rg-pablo'].includes(id)) {
-      route.fulfill({ status: 200, contentType: 'image/svg+xml', body: fakeCover(id) });
+      route.fulfill({ status: 200, contentType: 'image/svg+xml', body: fakeCover(id), headers: { 'Access-Control-Allow-Origin': '*' } });
     } else {
       route.fulfill({ status: 404, body: '' });
     }
@@ -290,6 +309,10 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     await page.selectOption('#random-artist', { label: 'Portishead' });
     await page.click('#spin-btn');
     assert.equal(await text(page, '.pick-title'), 'Dummy');
+    // No cover was found for Dummy (it was typed in), so the card takes its placeholder color
+    const albumTint = () => page.locator('#view-random .random-card').evaluate((el) => el.classList.contains('has-album') && el.style.getPropertyValue('--album'));
+    await page.waitForFunction(() => document.querySelector('#view-random .random-card').classList.contains('has-album'));
+    assert.match(await albumTint(), /^hsl\(/);
     await page.selectOption('#random-artist', '');
     // Kid A is the only Double LP, and it has a cover: the big pick uses the 1200px version
     await page.selectOption('#random-format', 'Double LP');
@@ -297,6 +320,12 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     assert.equal(await text(page, '.pick-title'), 'Kid A');
     await page.locator('#spin-sleeve .cover.loaded').waitFor();
     assert.ok(coverCalls.some((url) => url.endsWith('/rg-kida/front-1200')));
+    // Kid A has a cover, so the card fades down from the cover's main color
+    await page.waitForFunction(() => document.querySelector('#view-random .random-card').style.getPropertyValue('--album').startsWith('rgb('));
+    const [r, g, b] = (await albumTint()).match(/\d+/g).map(Number);
+    const expected = coverRgb('rg-kida');
+    assert.ok([r, g, b].every((v, i) => Math.abs(v - expected[i]) <= 3), `album color ${[r, g, b]} should match the cover ${expected}`);
+    await shot(page, '05b-random-album-color');
     await page.selectOption('#random-format', '');
     const titles = new Set(['OK Computer', 'Kid A', 'The Bends (Remastered)', 'Live at the Astoria', 'Dummy']);
     const seen = [];
@@ -432,7 +461,7 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
 test('uses Inter Tight and Inter, and follows the phone\'s light or dark setting', { skip: !chromium && 'playwright is not installed' }, async () => {
   const browser = await chromium.launch();
   try {
-    for (const [colorScheme, background] of [['light', 'rgb(244, 238, 229)'], ['dark', 'rgb(21, 18, 15)']]) {
+    for (const [colorScheme, background] of [['light', 'rgb(243, 245, 251)'], ['dark', 'rgb(7, 9, 15)']]) {
       const { context, page, errors } = await openApp(browser, { colorScheme });
       const styles = await page.evaluate(() => ({
         heading: getComputedStyle(document.querySelector('#collection-heading')).fontFamily,

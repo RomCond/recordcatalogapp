@@ -4,11 +4,11 @@ A small web app for keeping track of the vinyl records you own and the ones you'
 
 - **Add records fast.** One search box takes any part of an album or artist name ("ok comp", "radiohead kid") or the barcode from the sleeve, and shows matches as you type. It's vinyl only: a barcode for a CD or cassette is turned away. Add one in one tap; year and cover art fill in on their own. Anything that isn't in the database can be added by hand. You keep one copy per album: albums you already have show "In collection" instead of an Add button (a deluxe edition counts as its own album).
 - **Browse your shelf.** Grouped by artist, with search, a format filter and a few sort orders. Tap a record to edit or delete it.
-- **Pick one at random.** Filter by format or artist if you like. It won't repeat the last few picks.
+- **Pick one at random.** Filter by format or artist if you like. It won't repeat the last few picks. The card behind the pick fades down from the main color of its cover, and so does the top of a record's edit screen.
 - **See what you're missing.** Pick an artist and the app compares their discography with your shelf: what you have, what you don't, and a copyable list to take to the record store. Tap "Got it" when you find one, or "Wishlist" to save it for later.
 - **Keep a wishlist.** The Collection tab switches between your records and your wishlist. Tap "Got it" on a wishlist record to move it onto your shelf; getting a record any other way takes it off the wishlist too.
 
-Lookups use [MusicBrainz](https://musicbrainz.org) and the [Cover Art Archive](https://coverartarchive.org). Both are free and need no API key. Covers load at 500px for the lists and 1200px for the random pick, so they stay sharp on phone screens. Headings use Inter Tight and text uses Inter, from Google Fonts; without a connection they fall back to the system font. Light or dark follows the phone's setting.
+Lookups use [MusicBrainz](https://musicbrainz.org) and the [Cover Art Archive](https://coverartarchive.org). Both are free and need no API key. Reading a cover's main color needs the image server to allow cross-origin reads; if it doesn't, the record's placeholder color is used instead. Covers load at 500px for the lists and 1200px for the random pick, so they stay sharp on phone screens. The colors are electric blue on cool white, or near-black in dark mode. Headings use Inter Tight and text uses Inter, from Google Fonts; without a connection they fall back to the system font. Light or dark follows the phone's setting.
 
 ## Running it
 

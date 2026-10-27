@@ -4,23 +4,23 @@
  */
 
 :root {
-  --bg: #f4eee5;
-  --surface: #fffcf6;
-  --surface-2: #ece3d6;
-  --ink: #221c17;
-  --muted: #6e6359;
-  --line: #e0d4c3;
-  --accent: #b5441a;
-  --accent-hover: #9c3812;
+  --bg: #f3f5fb;
+  --surface: #ffffff;
+  --surface-2: #e6eaf5;
+  --ink: #0e1220;
+  --muted: #555e75;
+  --line: #dce1ee;
+  --accent: #1f4dff;
+  --accent-hover: #1638d6;
   --accent-ink: #ffffff;
-  --accent-soft: #f9e6d9;
-  --ok: #2f6b3a;
-  --ok-soft: #d9ecd9;
-  --danger: #b42318;
-  --danger-soft: #f8dcd8;
-  --vinyl: #1b1816;
-  --vinyl-groove: #2b2724;
-  --shadow: 0 1px 2px rgb(70 45 20 / 0.06), 0 6px 20px rgb(70 45 20 / 0.07);
+  --accent-soft: #e3e9ff;
+  --ok: #1b6e45;
+  --ok-soft: #dcf1e6;
+  --danger: #c22a2a;
+  --danger-soft: #fbe1e1;
+  --vinyl: #11141c;
+  --vinyl-groove: #20242f;
+  --shadow: 0 1px 2px rgb(15 20 50 / 0.06), 0 6px 20px rgb(15 20 50 / 0.08);
   --radius: 14px;
   --radius-sm: 9px;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -29,28 +29,32 @@
   --font-body: "Inter", var(--sans);
   --heading-weight: 700;
   --heading-tracking: -0.015em;
+  --album-strong: 70%;
+  --album-soft: 35%;
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #15120f;
-    --surface: #1e1a16;
-    --surface-2: #2a241e;
-    --ink: #f2eae0;
-    --muted: #a89c8f;
-    --line: #362e27;
-    --accent: #ee8b54;
-    --accent-hover: #f59f6d;
-    --accent-ink: #1c0f07;
-    --accent-soft: #3d2619;
-    --ok: #86c891;
-    --ok-soft: #1f3324;
-    --danger: #f2877a;
-    --danger-soft: #3d1f1b;
-    --vinyl: #0c0b0a;
-    --vinyl-groove: #221f1c;
-    --shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+    --bg: #07090f;
+    --surface: #10131c;
+    --surface-2: #191d29;
+    --ink: #eef1f8;
+    --muted: #9aa3b8;
+    --line: #232838;
+    --accent: #5b85ff;
+    --accent-hover: #7a9cff;
+    --accent-ink: #050814;
+    --accent-soft: #121a40;
+    --ok: #74d3a3;
+    --ok-soft: #12301f;
+    --danger: #ff8b8b;
+    --danger-soft: #3b1618;
+    --vinyl: #030407;
+    --vinyl-groove: #151924;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.5);
+    --album-strong: 55%;
+    --album-soft: 25%;
     color-scheme: dark;
   }
 }
@@ -657,6 +661,29 @@ button.wished {
 
 .random-card { text-align: center; }
 
+/* ---------- Album color ---------- */
+/* Behind a record you're looking at, the card fades down from the cover's main color.
+   The fade ends before the title, so text always sits on the plain card. */
+
+@property --album {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+
+.has-album { transition: --album 0.6s ease; }
+
+.random-card.has-album {
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--album) var(--album-strong), var(--surface)) 0,
+    color-mix(in srgb, var(--album) var(--album-soft), var(--surface)) 190px,
+    var(--surface) 340px);
+}
+
+#edit-dialog.has-album {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--album) 30%, var(--surface)) 0, var(--surface) 150px);
+}
+
 .stage {
   position: relative;
   width: min(100%, 340px);
@@ -818,7 +845,7 @@ dialog {
   box-shadow: 0 20px 60px rgb(0 0 0 / 0.3);
 }
 
-dialog::backdrop { background: rgb(20 14 10 / 0.5); }
+dialog::backdrop { background: rgb(6 8 18 / 0.55); }
 
 .edit-form { padding: 18px; }
 

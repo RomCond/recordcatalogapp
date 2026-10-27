@@ -55,6 +55,80 @@
     return `hsl(${hue(`${item.artist || ''}${item.title || ''}`)} 55% 52%)`;
   }
 
+  // The main color of a cover, for tinting the screen behind it. A small copy is drawn to a canvas
+  // and sampled, which needs the image server to allow cross-origin reads. When it doesn't, or there's
+  // no cover, this falls back to the record's placeholder color.
+  const albumColors = new Map();
+
+  function albumColor(item) {
+    const fallback = labelColor(item);
+    if (!item.releaseGroupId) return Promise.resolve(fallback);
+    if (!albumColors.has(item.releaseGroupId)) {
+      albumColors.set(item.releaseGroupId, new Promise((resolve) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          try {
+            resolve(mainColor(img) || fallback);
+          } catch (e) {
+            resolve(fallback); // the browser refused to read the pixels
+          }
+        };
+        img.onerror = () => resolve(fallback);
+        img.src = mb.coverUrl(item.releaseGroupId, 250);
+      }));
+    }
+    return albumColors.get(item.releaseGroupId);
+  }
+
+  // Groups the pixels into color buckets and returns the average of the heaviest one. Colorful pixels
+  // weigh more than greys, and near-black or near-white ones barely count, so a black sleeve with a
+  // red logo comes out red.
+  function mainColor(img) {
+    const size = 32;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0, size, size);
+    const { data } = ctx.getImageData(0, 0, size, size);
+    const buckets = new Map();
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      const lightness = (max + min) / 510;
+      const vividness = (max - min) / 255; // pale tints like cream score low, unlike HSL saturation
+      const weight = (0.1 + vividness) * (lightness < 0.08 || lightness > 0.94 ? 0.1 : 1);
+      const key = ((r >> 5) << 6) | ((g >> 5) << 3) | (b >> 5);
+      const bucket = buckets.get(key) || { r: 0, g: 0, b: 0, weight: 0 };
+      bucket.r += r * weight;
+      bucket.g += g * weight;
+      bucket.b += b * weight;
+      bucket.weight += weight;
+      buckets.set(key, bucket);
+    }
+    let best = null;
+    for (const bucket of buckets.values()) if (!best || bucket.weight > best.weight) best = bucket;
+    if (!best || !best.weight) return null;
+    const channel = (sum) => Math.round(sum / best.weight);
+    return `rgb(${channel(best.r)} ${channel(best.g)} ${channel(best.b)})`;
+  }
+
+  // Tints an element's background with the record's main color (see .has-album in the CSS).
+  // Skips the update if a different record has been shown in the meantime.
+  function tintWithAlbum(el, record, extra) {
+    el.dataset.albumFor = record.id;
+    albumColor(record).then((color) => {
+      if (el.dataset.albumFor !== record.id) return;
+      el.style.setProperty('--album', color);
+      el.classList.add('has-album');
+      if (extra) extra(color);
+    });
+  }
+
   // Cover Art Archive sizes in pixels, about 3x the size shown so covers stay sharp on phone screens.
   const COVER_SIZES = { sm: [500], md: [500], lg: [1200, 500] };
 
@@ -312,6 +386,8 @@
     fields.notes.value = record.notes;
     $('#edit-cover').replaceChildren(cover(record, 'md'));
     const dialog = $('#edit-dialog');
+    dialog.classList.remove('has-album');
+    tintWithAlbum(dialog, record);
     dialog.returnValue = '';
     dialog.showModal();
   }
@@ -488,6 +564,8 @@
   function showPick(record) {
     const stage = $('#spin-stage');
     stage.style.setProperty('--label', labelColor(record));
+    // The card behind the record fades from the cover's main color, and the record's label matches it.
+    tintWithAlbum($('#view-random .random-card'), record, (color) => stage.style.setProperty('--label', color));
     $('#spin-sleeve').replaceChildren(cover(record, 'lg'));
     stage.classList.remove('spinning');
     void stage.offsetWidth; // restart the animation
