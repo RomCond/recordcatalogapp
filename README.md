@@ -7,9 +7,9 @@ A small web app for keeping track of the vinyl records you own and the ones you'
 - **Pick one at random.** Filter by format or artist if you like. It won't repeat the last few picks.
 - **See what you're missing.** Pick an artist and the app compares their discography with your shelf: what you have, what you don't, and a copyable list to take to the record store. Tap "Got it" when you find one, or "Wishlist" to save it for later.
 - **Keep a wishlist.** The Collection tab switches between your records and your wishlist. Tap "Got it" on a wishlist record to move it onto your shelf; getting a record any other way takes it off the wishlist too.
-- **Pick a theme.** The Theme button in the header switches between four color schemes (Burnt orange, Cobalt, Olive, Magenta), four font pairings (Classic, Retro, Modern, Poster) and light or dark. Changes show right away and are saved on that device.
+- **Pick a theme.** The Theme button in the header switches between four color schemes (Burnt orange, Cobalt, Olive, Magenta), seven font pairings (Classic, Jazz label, Quiet, Catalog, Retro, Modern, Poster) and light or dark. Changes show right away and are saved on that device.
 
-Lookups use [MusicBrainz](https://musicbrainz.org) and the [Cover Art Archive](https://coverartarchive.org). Both are free and need no API key. Covers load at 500px for the lists and 1200px for the random pick, so they stay sharp on phone screens. The Retro, Modern and Poster fonts come from Google Fonts; without a connection they fall back to system fonts.
+Lookups use [MusicBrainz](https://musicbrainz.org) and the [Cover Art Archive](https://coverartarchive.org). Both are free and need no API key. Covers load at 500px for the lists and 1200px for the random pick, so they stay sharp on phone screens. Every font except Classic comes from Google Fonts; without a connection they fall back to system fonts.
 
 ## Running it
 

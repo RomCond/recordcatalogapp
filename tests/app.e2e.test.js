@@ -439,7 +439,7 @@ test('the Theme picker changes colors and fonts and remembers them', { skip: !ch
     await page.click('#theme-btn');
     assert.ok(await page.locator('#look-dialog').isVisible());
     assert.deepEqual(await page.locator('#look-palette .look-choice').allTextContents(), ['Burnt orange', 'Cobalt', 'Olive', 'Magenta']);
-    assert.deepEqual(await page.locator('#look-font .look-choice').allTextContents(), ['Classic', 'Retro', 'Modern', 'Poster']);
+    assert.deepEqual(await page.locator('#look-font .look-choice').allTextContents(), ['Classic', 'Jazz label', 'Quiet', 'Catalog', 'Retro', 'Modern', 'Poster']);
 
     // Choices apply right away
     await page.locator('#look-palette .look-choice', { hasText: 'Cobalt' }).click();

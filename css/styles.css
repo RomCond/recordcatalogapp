@@ -194,7 +194,38 @@
 [data-font="classic"] {
   --font-heading: var(--serif);
   --font-body: var(--sans);
+  --font-meta: var(--font-body);
   --heading-weight: 600;
+  --heading-case: none;
+  --heading-tracking: 0;
+}
+
+/* Jazz label: one clean sans in two weights */
+[data-font="jazz"] {
+  --font-heading: "Instrument Sans", var(--sans);
+  --font-body: "Instrument Sans", var(--sans);
+  --font-meta: var(--font-body);
+  --heading-weight: 700;
+  --heading-case: none;
+  --heading-tracking: -0.01em;
+}
+
+/* Quiet modern: tight headings that let the covers lead */
+[data-font="quiet"] {
+  --font-heading: "Inter Tight", var(--sans);
+  --font-body: "Inter", var(--sans);
+  --font-meta: var(--font-body);
+  --heading-weight: 700;
+  --heading-case: none;
+  --heading-tracking: -0.015em;
+}
+
+/* Catalog: heavy headings, with years and formats set like catalog numbers on a label */
+[data-font="catalog"] {
+  --font-heading: "Archivo Black", var(--sans);
+  --font-body: "Archivo", var(--sans);
+  --font-meta: "IBM Plex Mono", ui-monospace, monospace;
+  --heading-weight: 400;
   --heading-case: none;
   --heading-tracking: 0;
 }
@@ -202,6 +233,7 @@
 [data-font="retro"] {
   --font-heading: "Fraunces", Georgia, serif;
   --font-body: "DM Sans", var(--sans);
+  --font-meta: var(--font-body);
   --heading-weight: 700;
   --heading-case: none;
   --heading-tracking: -0.01em;
@@ -210,6 +242,7 @@
 [data-font="modern"] {
   --font-heading: "Space Grotesk", var(--sans);
   --font-body: "Inter", var(--sans);
+  --font-meta: var(--font-body);
   --heading-weight: 600;
   --heading-case: none;
   --heading-tracking: -0.01em;
@@ -218,6 +251,7 @@
 [data-font="poster"] {
   --font-heading: "Oswald", "Arial Narrow", var(--sans);
   --font-body: "Work Sans", var(--sans);
+  --font-meta: var(--font-body);
   --heading-weight: 600;
   --heading-case: uppercase;
   --heading-tracking: 0.02em;
@@ -616,8 +650,10 @@ details.card[open] > summary::before { content: "\2212"; }
   overflow-wrap: anywhere;
 }
 
-.record-meta {
+.record-meta,
+.pick-meta {
   color: var(--muted);
+  font-family: var(--font-meta);
   font-size: 0.875rem;
   overflow-wrap: anywhere;
 }

@@ -495,7 +495,7 @@
     $('#spin-meta').replaceChildren(
       h('h2', { class: 'pick-title' }, record.title),
       h('p', { class: 'pick-artist' }, record.artist),
-      h('p', { class: 'muted' }, meta(record.year, record.format)),
+      h('p', { class: 'pick-meta' }, meta(record.year, record.format)),
       ...(record.notes ? [h('p', { class: 'pick-notes' }, record.notes)] : []));
     $('#spin-btn').textContent = 'Pick another';
   }
@@ -779,6 +779,9 @@
     ],
     font: [
       { key: 'classic', label: 'Classic' },
+      { key: 'jazz', label: 'Jazz label' },
+      { key: 'quiet', label: 'Quiet' },
+      { key: 'catalog', label: 'Catalog' },
       { key: 'retro', label: 'Retro' },
       { key: 'modern', label: 'Modern' },
       { key: 'poster', label: 'Poster' },
