@@ -56,6 +56,46 @@ test('you can only add one copy of an album', () => {
   assert.equal(store.findCopy({ artist: 'Weezer', title: 'Weezer', releaseGroupId: 'red' }), null);
 });
 
+test('only vinyl formats are offered', () => {
+  assert.deepEqual(S.FORMATS, ['LP', 'Double LP', 'EP', '7" single', '12" single', 'Box set', 'Other']);
+});
+
+test('the wishlist holds records you want, apart from the collection', () => {
+  const storage = S.memoryStorage();
+  const store = S.createStore(storage);
+  store.add({ artist: 'Weezer', title: 'Weezer', releaseGroupId: 'blue' });
+  const wish = store.addToWishlist({ artist: 'Weezer', title: 'Pinkerton', releaseGroupId: 'pink' });
+  store.addToWishlist({ artist: 'Weezer', title: 'Pinkerton (Deluxe Edition)', releaseGroupId: 'pink' });
+
+  assert.equal(store.all().length, 1, 'wishes are not in the collection');
+  assert.deepEqual(store.wishlist().map((w) => w.title), ['Pinkerton', 'Pinkerton (Deluxe Edition)']);
+  assert.equal(store.findWish({ artist: 'weezer', title: 'pinkerton' }).id, wish.id);
+  assert.throws(() => store.addToWishlist({ artist: 'Weezer', title: 'Pinkerton', releaseGroupId: 'pink' }), /already on your wishlist/);
+  assert.throws(() => store.addToWishlist({ artist: 'Weezer', title: 'Weezer', releaseGroupId: 'blue' }), /already in your collection/);
+  assert.equal(S.createStore(storage).wishlist().length, 2, 'the wishlist is saved');
+
+  // Getting a record takes it off the wishlist, edition by edition
+  store.add({ artist: 'Weezer', title: 'Pinkerton', releaseGroupId: 'pink' });
+  assert.deepEqual(store.wishlist().map((w) => w.title), ['Pinkerton (Deluxe Edition)']);
+
+  const [deluxe] = store.wishlist();
+  assert.equal(store.removeFromWishlist(deluxe.id).title, 'Pinkerton (Deluxe Edition)');
+  assert.deepEqual(store.wishlist(), []);
+  assert.equal(store.removeFromWishlist('gone'), null);
+});
+
+test('backups carry the wishlist too', () => {
+  const source = S.createStore(S.memoryStorage());
+  source.add({ artist: 'Weezer', title: 'Weezer', releaseGroupId: 'blue' });
+  source.addToWishlist({ artist: 'Weezer', title: 'Pinkerton', releaseGroupId: 'pink' });
+  source.addToWishlist({ artist: 'Weezer', title: 'Maladroit', releaseGroupId: 'mal' });
+
+  const target = S.createStore(S.memoryStorage());
+  target.add({ artist: 'Weezer', title: 'Maladroit', releaseGroupId: 'mal' }); // already have it here
+  assert.deepEqual(target.importJSON(source.exportJSON()), { added: 1, skipped: 0, wishes: 1 });
+  assert.deepEqual(target.wishlist().map((w) => w.title), ['Pinkerton'], 'albums you already have stay off the wishlist');
+});
+
 test('changing the artist name drops the old MusicBrainz artist link', () => {
   const store = S.createStore(S.memoryStorage());
   const record = store.add({ artist: 'Radiohead', title: 'Kid A', artistId: 'a1' });
@@ -81,12 +121,12 @@ test('backups round trip and do not create duplicates', () => {
   const backup = source.exportJSON();
 
   const target = S.createStore(S.memoryStorage());
-  assert.deepEqual(target.importJSON(backup), { added: 2, skipped: 0 });
-  assert.deepEqual(target.importJSON(backup), { added: 0, skipped: 2 });
+  assert.deepEqual(target.importJSON(backup), { added: 2, skipped: 0, wishes: 0 });
+  assert.deepEqual(target.importJSON(backup), { added: 0, skipped: 2, wishes: 0 });
   assert.equal(target.all()[0].format, 'Double LP');
-  assert.deepEqual(target.importJSON(JSON.stringify([{ artist: 'Low', title: 'Things We Lost in the Fire' }, { title: 'No artist' }])), { added: 1, skipped: 1 });
+  assert.deepEqual(target.importJSON(JSON.stringify([{ artist: 'Low', title: 'Things We Lost in the Fire' }, { title: 'No artist' }])), { added: 1, skipped: 1, wishes: 0 });
   // A backup from another device skips albums you already have, even with different ids
-  assert.deepEqual(target.importJSON(JSON.stringify([{ id: 'other-device', artist: 'portishead', title: 'Dummy' }])), { added: 0, skipped: 1 });
+  assert.deepEqual(target.importJSON(JSON.stringify([{ id: 'other-device', artist: 'portishead', title: 'Dummy' }])), { added: 0, skipped: 1, wishes: 0 });
   assert.throws(() => target.importJSON('not json'), /valid backup/);
   assert.throws(() => target.importJSON('{"hello": 1}'), /look like/);
 });

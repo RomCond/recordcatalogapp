@@ -5,7 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
   <title>Record Catalog</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23221c17'/%3E%3Ccircle cx='16' cy='16' r='6' fill='%23b5441a'/%3E%3Ccircle cx='16' cy='16' r='1.5' fill='%23f4eee5'/%3E%3C/svg%3E">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%230e1220'/%3E%3Ccircle cx='16' cy='16' r='6' fill='%231f4dff'/%3E%3Ccircle cx='16' cy='16' r='1.5' fill='%23f3f5fb'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <!-- Inter Tight and Inter. Loaded without holding up the page; until they arrive the system font shows. -->
+  <link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@600;700&family=Inter:wght@400;600;700&display=swap">
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
@@ -29,6 +33,10 @@
     <!-- Collection -->
     <section id="view-collection" class="view" aria-labelledby="collection-heading">
       <h1 id="collection-heading" class="view-title">Your collection</h1>
+      <nav class="segmented" aria-label="Lists">
+        <a href="#collection">Collection <span class="count" id="count-collection">0</span></a>
+        <a href="#wishlist">Wishlist <span class="count" id="count-wishlist">0</span></a>
+      </nav>
       <div class="toolbar" id="collection-tools">
         <input type="search" id="filter-text" placeholder="Search artist, title or notes" aria-label="Search your records">
         <select id="filter-format" aria-label="Filter by format"></select>
@@ -46,6 +54,12 @@
         <h2>Your shelf is empty</h2>
         <p class="muted">Search by artist, album or barcode and add a record in one tap.</p>
         <a class="button primary" href="#add">Add your first record</a>
+      </div>
+      <div class="empty" id="wishlist-empty" hidden>
+        <span class="empty-disc" aria-hidden="true"></span>
+        <h2>Nothing on your wishlist yet</h2>
+        <p class="muted">Open an artist's discography and tap Wishlist on the records you're hunting for.</p>
+        <a class="button primary" href="#discography">Go to Discography</a>
       </div>
       <div class="data-tools">
         <button type="button" id="export-btn">Export backup</button>

@@ -11,12 +11,14 @@
 
   const KEYS = {
     records: 'recordcatalog.records.v1',
+    wishlist: 'recordcatalog.wishlist.v1',
     discographies: 'recordcatalog.discographies.v4', // v4: vinyl yes/no plus deluxe editions
     prefs: 'recordcatalog.prefs.v1',
   };
   const OLD_KEYS = ['recordcatalog.discographies.v1', 'recordcatalog.discographies.v2', 'recordcatalog.discographies.v3'];
 
-  const FORMATS = ['LP', 'Double LP', 'EP', '7" single', '12" single', 'Box set', 'CD', 'Cassette', 'Other'];
+  // Vinyl only. Records saved earlier as CD or Cassette keep that format until you change it.
+  const FORMATS = ['LP', 'Double LP', 'EP', '7" single', '12" single', 'Box set', 'Other'];
 
   // Buckets for the discography filters, in display order.
   const CATEGORIES = [
@@ -231,10 +233,10 @@
       backend.setItem(key, JSON.stringify(value));
     }
 
-    function loadRecords() {
+    function loadList(key) {
       let raw = null;
       try {
-        raw = backend.getItem(KEYS.records);
+        raw = backend.getItem(key);
       } catch (e) {
         return [];
       }
@@ -245,13 +247,14 @@
       } catch (e) {
         // Keep the unreadable copy aside so the next save can't destroy it.
         try {
-          backend.setItem(`${KEYS.records}.unreadable`, raw);
+          backend.setItem(`${key}.unreadable`, raw);
         } catch (ignored) {}
         return [];
       }
     }
 
-    let records = loadRecords();
+    let records = loadList(KEYS.records);
+    let wishes = loadList(KEYS.wishlist);
     for (const key of OLD_KEYS) {
       try {
         backend.removeItem(key);
@@ -260,7 +263,13 @@
 
     function commit() {
       write(KEYS.records, records);
+      write(KEYS.wishlist, wishes);
       listeners.forEach((listener) => listener());
+    }
+
+    // Getting a record ticks it off the wishlist.
+    function dropWishesYouOwn() {
+      wishes = wishes.filter((wish) => !records.some((record) => sameAlbum(record, wish)));
     }
 
     function find(id) {
@@ -284,8 +293,37 @@
         if (copy) throw new Error(`"${copy.title}" is already in your collection.`);
         if (find(record.id)) record.id = newId();
         records.push(record);
+        dropWishesYouOwn();
         commit();
         return record;
+      },
+
+      // ----- Wishlist: records you're looking for, kept apart from the collection -----
+
+      wishlist: () => wishes.slice(),
+
+      findWish(input) {
+        return wishes.find((wish) => sameAlbum(wish, input)) || null;
+      },
+
+      addToWishlist(input) {
+        const wish = cleanRecord(input);
+        const copy = records.find((r) => sameAlbum(r, wish));
+        if (copy) throw new Error(`"${copy.title}" is already in your collection.`);
+        const wanted = wishes.find((w) => sameAlbum(w, wish));
+        if (wanted) throw new Error(`"${wanted.title}" is already on your wishlist.`);
+        if (wishes.some((w) => w.id === wish.id)) wish.id = newId();
+        wishes.push(wish);
+        commit();
+        return wish;
+      },
+
+      removeFromWishlist(id) {
+        const wish = wishes.find((w) => w.id === id) || null;
+        if (!wish) return null;
+        wishes = wishes.filter((w) => w.id !== id);
+        commit();
+        return wish;
       },
 
       update(id, patch) {
@@ -322,9 +360,10 @@
       },
 
       exportJSON() {
-        return JSON.stringify({ app: 'recordcatalog', version: 1, exportedAt: new Date().toISOString(), records }, null, 2);
+        return JSON.stringify({ app: 'recordcatalog', version: 2, exportedAt: new Date().toISOString(), records, wishlist: wishes }, null, 2);
       },
 
+      // Merges a backup in. Albums you already have, or already want, are skipped.
       importJSON(text) {
         let data;
         try {
@@ -334,27 +373,35 @@
         }
         const list = Array.isArray(data) ? data : data && data.records;
         if (!Array.isArray(list)) throw new Error("That file doesn't look like a Record Catalog backup.");
-        const ids = new Set(records.map((record) => record.id));
-        let added = 0;
-        let skipped = 0;
-        for (const item of list) {
-          let record;
-          try {
-            record = cleanRecord(item || {});
-          } catch (e) {
-            skipped++;
-            continue;
+
+        const ids = new Set([...records, ...wishes].map((record) => record.id));
+        const merge = (items, into, alsoSkip = []) => {
+          let count = 0;
+          let skipped = 0;
+          for (const item of items) {
+            let record;
+            try {
+              record = cleanRecord(item || {});
+            } catch (e) {
+              skipped++;
+              continue;
+            }
+            if (ids.has(record.id) || into.some((r) => sameAlbum(r, record)) || alsoSkip.some((r) => sameAlbum(r, record))) {
+              skipped++;
+              continue;
+            }
+            ids.add(record.id);
+            into.push(record);
+            count++;
           }
-          if (ids.has(record.id) || records.some((r) => sameAlbum(r, record))) {
-            skipped++;
-            continue;
-          }
-          ids.add(record.id);
-          records.push(record);
-          added++;
-        }
-        if (added) commit();
-        return { added, skipped };
+          return { count, skipped };
+        };
+
+        const fromRecords = merge(list, records);
+        const fromWishlist = merge(Array.isArray(data.wishlist) ? data.wishlist : [], wishes, records);
+        dropWishesYouOwn();
+        if (fromRecords.count || fromWishlist.count) commit();
+        return { added: fromRecords.count, skipped: fromRecords.skipped, wishes: fromWishlist.count };
       },
 
       getDiscography(artistId) {

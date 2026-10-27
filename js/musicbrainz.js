@@ -122,8 +122,6 @@
   function formatFromMedia(media, primaryType) {
     if (!media.length) return null;
     const every = (pattern) => media.every((format) => pattern.test(format));
-    if (every(/CD/)) return 'CD';
-    if (every(/Cassette/)) return 'Cassette';
     if (!every(VINYL_FORMAT_NAME)) return null;
     if (media.length >= 3) return 'Box set';
     if (media.length === 2) return 'Double LP';
@@ -163,11 +161,18 @@
     }));
   }
 
+  // Only vinyl pressings come back. hiddenNonVinyl counts the CD and cassette matches left out.
   async function searchBarcode(barcode, signal) {
     const data = await get('release', { query: `barcode:${barcode}`, limit: 10 }, signal);
-    return (data.releases || []).map((release) => {
+    const mediaOf = (release) => (release.media || []).map((medium) => medium.format).filter(Boolean);
+    const all = data.releases || [];
+    const vinyl = all.filter((release) => {
+      const media = mediaOf(release);
+      return !media.length || media.some((format) => VINYL_FORMAT_NAME.test(format));
+    });
+    const results = vinyl.map((release) => {
       const group = release['release-group'] || {};
-      const media = (release.media || []).map((medium) => medium.format).filter(Boolean);
+      const media = mediaOf(release);
       // Keep "deluxe edition" and the like in the title so the record shows which version it is.
       const note = release.disambiguation || '';
       const title = DELUXE_WORDS.test(note) && !DELUXE_WORDS.test(release.title) ? `${release.title} (${note})` : release.title;
@@ -184,11 +189,13 @@
         media: mediaLabel(media),
       };
     });
+    return { results, hiddenNonVinyl: all.length - vinyl.length };
   }
 
-  // What the single search box on the Add page calls.
-  function search(text, signal) {
-    return looksLikeBarcode(text) ? searchBarcode(text.replace(/\D/g, ''), signal) : searchReleaseGroups(text, signal);
+  // What the single search box on the Add page calls. Resolves to { results, hiddenNonVinyl }.
+  async function search(text, signal) {
+    if (looksLikeBarcode(text)) return searchBarcode(text.replace(/\D/g, ''), signal);
+    return { results: await searchReleaseGroups(text, signal), hiddenNonVinyl: 0 };
   }
 
   async function searchArtists(name) {
