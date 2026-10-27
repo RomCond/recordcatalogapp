@@ -141,7 +141,9 @@ async function openApp(browser, options = {}) {
     });
   });
   // Some covers exist, the rest 404 so the vinyl placeholder shows.
+  const coverCalls = [];
   await context.route('https://coverartarchive.org/**', (route) => {
+    coverCalls.push(route.request().url());
     const id = route.request().url().split('/release-group/')[1].split('/')[0];
     if (['rg-okc', 'rg-kida', 'rg-dummy', 'rg-pablo'].includes(id)) {
       route.fulfill({ status: 200, contentType: 'image/svg+xml', body: fakeCover(id) });
@@ -149,6 +151,8 @@ async function openApp(browser, options = {}) {
       route.fulfill({ status: 404, body: '' });
     }
   });
+  // Fonts come from Google Fonts in real use; an empty stylesheet keeps the test offline.
+  await context.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, (route) => route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (err) => errors.push(err.message));
@@ -156,7 +160,7 @@ async function openApp(browser, options = {}) {
     if (msg.type() === 'error' && !msg.text().startsWith('Failed to load resource')) errors.push(msg.text());
   });
   await page.goto(PAGE_URL);
-  return { context, page, errors, mbCalls };
+  return { context, page, errors, mbCalls, coverCalls };
 }
 
 async function shot(page, name) {
@@ -189,7 +193,7 @@ async function assertNoJunkText(page, where) {
 test('add, browse, edit, shuffle and find missing records', { skip: !chromium && 'playwright is not installed' }, async () => {
   const browser = await chromium.launch();
   try {
-    const { context, page, errors, mbCalls } = await openApp(browser);
+    const { context, page, errors, mbCalls, coverCalls } = await openApp(browser);
 
     // Empty shelf
     assert.ok(await page.locator('#collection-empty').isVisible());
@@ -259,6 +263,9 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     assert.deepEqual(await page.locator('.artist-name').evaluateAll((els) => els.map((el) => el.firstChild.textContent)), ['Portishead', 'Radiohead']);
     assert.match(await text(page, '#collection-list'), /Kid A\n2000 · Double LP/);
     await shot(page, '03-collection');
+    // Thumbnails use the sharper 500px covers
+    assert.ok(coverCalls.some((url) => url.endsWith('/rg-okc/front-500')));
+    assert.ok(!coverCalls.some((url) => url.endsWith('front-250')), 'no low-resolution covers');
     await page.fill('#filter-text', 'bends');
     assert.equal(await page.locator('#collection-list .record').count(), 1);
     await page.fill('#filter-text', '');
@@ -284,6 +291,13 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     await page.click('#spin-btn');
     assert.equal(await text(page, '.pick-title'), 'Dummy');
     await page.selectOption('#random-artist', '');
+    // Kid A is the only Double LP, and it has a cover: the big pick uses the 1200px version
+    await page.selectOption('#random-format', 'Double LP');
+    await page.click('#spin-btn');
+    assert.equal(await text(page, '.pick-title'), 'Kid A');
+    await page.locator('#spin-sleeve .cover.loaded').waitFor();
+    assert.ok(coverCalls.some((url) => url.endsWith('/rg-kida/front-1200')));
+    await page.selectOption('#random-format', '');
     const titles = new Set(['OK Computer', 'Kid A', 'The Bends (Remastered)', 'Live at the Astoria', 'Dummy']);
     const seen = [];
     for (let i = 0; i < 4; i++) {
@@ -407,6 +421,55 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     await page.locator('#toast.show', { hasText: 'Imported 7 records and 1 for your wishlist' }).waitFor();
     assert.equal(await text(page, '#nav-count'), '7');
     assert.equal(await wishCount(), '1');
+
+    assert.deepEqual(errors, []);
+    await context.close();
+  } finally {
+    await browser.close();
+  }
+});
+
+test('the Theme picker changes colors and fonts and remembers them', { skip: !chromium && 'playwright is not installed' }, async () => {
+  const browser = await chromium.launch();
+  try {
+    const { context, page, errors } = await openApp(browser, { colorScheme: 'light' });
+    const look = () => page.evaluate(() => ['data-palette', 'data-font', 'data-scheme'].map((a) => document.documentElement.getAttribute(a)));
+    assert.deepEqual(await look(), ['orange', 'classic', 'light']);
+
+    await page.click('#theme-btn');
+    assert.ok(await page.locator('#look-dialog').isVisible());
+    assert.deepEqual(await page.locator('#look-palette .look-choice').allTextContents(), ['Burnt orange', 'Cobalt', 'Olive', 'Magenta']);
+    assert.deepEqual(await page.locator('#look-font .look-choice').allTextContents(), ['Classic', 'Retro', 'Modern', 'Poster']);
+
+    // Choices apply right away
+    await page.locator('#look-palette .look-choice', { hasText: 'Cobalt' }).click();
+    await page.locator('#look-font .look-choice', { hasText: 'Poster' }).click();
+    await page.locator('#look-mode .look-choice', { hasText: 'Dark' }).click();
+    assert.deepEqual(await look(), ['cobalt', 'poster', 'dark']);
+    const styles = await page.evaluate(() => {
+      const heading = getComputedStyle(document.querySelector('#look-heading'));
+      return { font: heading.fontFamily, transform: heading.textTransform, bg: getComputedStyle(document.body).backgroundColor };
+    });
+    assert.match(styles.font, /^Oswald/);
+    assert.equal(styles.transform, 'uppercase');
+    assert.equal(styles.bg, 'rgb(12, 17, 28)', 'cobalt dark background');
+    // Each swatch shows its own palette, whatever the page is using
+    const swatchAccent = await page.locator('#look-palette .swatch[data-palette="magenta"]').evaluate((el) => getComputedStyle(el).getPropertyValue('--accent').trim());
+    assert.equal(swatchAccent, '#ff5fae');
+    await shot(page, 'theme-picker');
+    await page.click('#look-dialog button[value=done]');
+    assert.ok(!(await page.locator('#look-dialog').isVisible()));
+
+    // Remembered after a reload, and applied before the app's own scripts run
+    await page.reload();
+    assert.deepEqual(await look(), ['cobalt', 'poster', 'dark']);
+
+    // "Match device" follows the system setting
+    await page.click('#theme-btn');
+    await page.locator('#look-mode .look-choice', { hasText: 'Match device' }).click();
+    assert.deepEqual(await look(), ['cobalt', 'poster', 'light']);
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-scheme') === 'dark');
 
     assert.deepEqual(errors, []);
     await context.close();

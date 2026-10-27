@@ -6,12 +6,39 @@
   <meta name="color-scheme" content="light dark">
   <title>Record Catalog</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23221c17'/%3E%3Ccircle cx='16' cy='16' r='6' fill='%23b5441a'/%3E%3Ccircle cx='16' cy='16' r='1.5' fill='%23f4eee5'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <!-- Fonts for the Theme picker. Loaded without holding up the page; the browser only downloads the ones in use. -->
+  <link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;600;700&family=Oswald:wght@500;600&family=Space+Grotesk:wght@500;600;700&family=Work+Sans:wght@400;600;700&display=swap">
   <link rel="stylesheet" href="css/styles.css">
+  <script>
+    // Applies the theme saved by the Theme picker before the page draws, so it never flashes the default first.
+    (function () {
+      var RC = (window.RC = window.RC || {});
+      var darkQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+      RC.applyLook = function (look) {
+        look = look || {};
+        var root = document.documentElement;
+        var dark = look.mode === 'dark' || (look.mode !== 'light' && !!darkQuery && darkQuery.matches);
+        root.setAttribute('data-palette', look.palette || 'orange');
+        root.setAttribute('data-font', look.font || 'classic');
+        root.setAttribute('data-scheme', dark ? 'dark' : 'light');
+      };
+      var saved = {};
+      try {
+        saved = JSON.parse(localStorage.getItem('recordcatalog.prefs.v1') || '{}').look || {};
+      } catch (e) {}
+      RC.applyLook(saved);
+    })();
+  </script>
 </head>
 <body>
   <header class="app-header">
     <div class="wrap header-inner">
-      <a class="brand" href="#collection"><span class="brand-disc" aria-hidden="true"></span>Record Catalog</a>
+      <div class="brand-row">
+        <a class="brand" href="#collection"><span class="brand-disc" aria-hidden="true"></span>Record Catalog</a>
+        <button type="button" class="link small theme-btn" id="theme-btn" aria-haspopup="dialog">Theme</button>
+      </div>
       <nav class="tabs" aria-label="Sections">
         <a href="#collection">Collection <span class="count" id="nav-count">0</span></a>
         <a href="#add">Add</a>
@@ -186,6 +213,17 @@
         <button type="button" class="link" id="edit-discography">Discography</button>
         <button type="button" class="link danger" id="edit-delete">Delete</button>
       </div>
+    </form>
+  </dialog>
+
+  <dialog id="look-dialog" aria-labelledby="look-heading">
+    <form method="dialog" class="look-form">
+      <h2 id="look-heading">Theme</h2>
+      <p class="muted small">Try a few. Changes show right away and are saved on this device.</p>
+      <fieldset class="look-group"><legend>Colors</legend><div class="choices" id="look-palette"></div></fieldset>
+      <fieldset class="look-group"><legend>Fonts</legend><div class="choices" id="look-font"></div></fieldset>
+      <fieldset class="look-group"><legend>Light or dark</legend><div class="choices" id="look-mode"></div></fieldset>
+      <div class="dialog-actions"><button value="done" class="primary">Done</button></div>
     </form>
   </dialog>
 

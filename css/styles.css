@@ -1,6 +1,22 @@
-/* Record Catalog styles. Colors are tokens on :root with a dark set below. */
+/*
+ * Record Catalog styles. Colors and fonts are tokens. The page's <html> element carries
+ * data-palette, data-scheme (light or dark) and data-font, set from the Theme picker, and each
+ * combination below fills in the tokens. The same attributes on any element (like the swatches
+ * in the picker) give that element its own colors or fonts.
+ */
 
 :root {
+  --radius: 14px;
+  --radius-sm: 9px;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* ---------- Colors ---------- */
+
+/* Burnt orange (the original look) */
+:root,
+[data-palette="orange"][data-scheme="light"] {
   --bg: #f4eee5;
   --surface: #fffcf6;
   --surface-2: #ece3d6;
@@ -10,7 +26,7 @@
   --accent: #b5441a;
   --accent-hover: #9c3812;
   --accent-ink: #ffffff;
-  --accent-soft: #f5dbcb;
+  --accent-soft: #f9e6d9;
   --ok: #2f6b3a;
   --ok-soft: #d9ecd9;
   --danger: #b42318;
@@ -18,34 +34,193 @@
   --vinyl: #1b1816;
   --vinyl-groove: #2b2724;
   --shadow: 0 1px 2px rgb(70 45 20 / 0.06), 0 6px 20px rgb(70 45 20 / 0.07);
-  --radius: 14px;
-  --radius-sm: 9px;
-  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
-  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #15120f;
-    --surface: #1e1a16;
-    --surface-2: #2a241e;
-    --ink: #f2eae0;
-    --muted: #a89c8f;
-    --line: #362e27;
-    --accent: #ee8b54;
-    --accent-hover: #f59f6d;
-    --accent-ink: #1c0f07;
-    --accent-soft: #3d2619;
-    --ok: #86c891;
-    --ok-soft: #1f3324;
-    --danger: #f2877a;
-    --danger-soft: #3d1f1b;
-    --vinyl: #0c0b0a;
-    --vinyl-groove: #221f1c;
-    --shadow: 0 1px 2px rgb(0 0 0 / 0.4);
-    color-scheme: dark;
-  }
+[data-palette="orange"][data-scheme="dark"] {
+  --bg: #15120f;
+  --surface: #1e1a16;
+  --surface-2: #2a241e;
+  --ink: #f2eae0;
+  --muted: #a89c8f;
+  --line: #362e27;
+  --accent: #ee8b54;
+  --accent-hover: #f59f6d;
+  --accent-ink: #1c0f07;
+  --accent-soft: #3d2619;
+  --ok: #86c891;
+  --ok-soft: #1f3324;
+  --danger: #f2877a;
+  --danger-soft: #3d1f1b;
+  --vinyl: #0c0b0a;
+  --vinyl-groove: #221f1c;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  color-scheme: dark;
+}
+
+/* Cobalt: cool paper and a strong blue */
+[data-palette="cobalt"][data-scheme="light"] {
+  --bg: #f2f3f6;
+  --surface: #ffffff;
+  --surface-2: #e6e9f0;
+  --ink: #121826;
+  --muted: #586174;
+  --line: #dbe0ea;
+  --accent: #2449d6;
+  --accent-hover: #1b39ad;
+  --accent-ink: #ffffff;
+  --accent-soft: #e0e7ff;
+  --ok: #1b6e45;
+  --ok-soft: #dcf1e6;
+  --danger: #c22a2a;
+  --danger-soft: #fbe1e1;
+  --vinyl: #14161c;
+  --vinyl-groove: #23262f;
+  --shadow: 0 1px 2px rgb(20 30 60 / 0.06), 0 6px 20px rgb(20 30 60 / 0.08);
+  color-scheme: light;
+}
+
+[data-palette="cobalt"][data-scheme="dark"] {
+  --bg: #0c111c;
+  --surface: #141b2a;
+  --surface-2: #1e2738;
+  --ink: #edf1f8;
+  --muted: #9aa6bb;
+  --line: #29344a;
+  --accent: #7c9cff;
+  --accent-hover: #9db5ff;
+  --accent-ink: #0b1222;
+  --accent-soft: #1d2b55;
+  --ok: #74d3a3;
+  --ok-soft: #12301f;
+  --danger: #ff8b8b;
+  --danger-soft: #3b1618;
+  --vinyl: #07090e;
+  --vinyl-groove: #1a1f2b;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.45);
+  color-scheme: dark;
+}
+
+/* Olive: hi-fi cabinet greens, with brass in the dark */
+[data-palette="olive"][data-scheme="light"] {
+  --bg: #efede4;
+  --surface: #fbfaf4;
+  --surface-2: #e2dfd1;
+  --ink: #23251c;
+  --muted: #606354;
+  --line: #d6d2c1;
+  --accent: #56622a;
+  --accent-hover: #444e1f;
+  --accent-ink: #ffffff;
+  --accent-soft: #e2e6c8;
+  --ok: #2f6b3a;
+  --ok-soft: #d9ead6;
+  --danger: #b0321f;
+  --danger-soft: #f6ddd6;
+  --vinyl: #1b1c16;
+  --vinyl-groove: #2a2b23;
+  --shadow: 0 1px 2px rgb(50 50 20 / 0.06), 0 6px 20px rgb(50 50 20 / 0.07);
+  color-scheme: light;
+}
+
+[data-palette="olive"][data-scheme="dark"] {
+  --bg: #14150f;
+  --surface: #1d1e16;
+  --surface-2: #282a1f;
+  --ink: #eeecdf;
+  --muted: #a7a891;
+  --line: #34362a;
+  --accent: #cdb75e;
+  --accent-hover: #dcc873;
+  --accent-ink: #1a1708;
+  --accent-soft: #3a3418;
+  --ok: #9ccf8a;
+  --ok-soft: #1e2f19;
+  --danger: #f0907a;
+  --danger-soft: #3b1d16;
+  --vinyl: #0b0b08;
+  --vinyl-groove: #1f2018;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.45);
+  color-scheme: dark;
+}
+
+/* Magenta: late-night neon */
+[data-palette="magenta"][data-scheme="light"] {
+  --bg: #f8f4f8;
+  --surface: #ffffff;
+  --surface-2: #efe6f1;
+  --ink: #20142a;
+  --muted: #6c5e78;
+  --line: #e5d9ea;
+  --accent: #b5136f;
+  --accent-hover: #940f5a;
+  --accent-ink: #ffffff;
+  --accent-soft: #fadbeb;
+  --ok: #23744a;
+  --ok-soft: #daf0e3;
+  --danger: #c0262d;
+  --danger-soft: #fbe0e1;
+  --vinyl: #19121f;
+  --vinyl-groove: #2a2031;
+  --shadow: 0 1px 2px rgb(60 20 60 / 0.06), 0 6px 20px rgb(60 20 60 / 0.08);
+  color-scheme: light;
+}
+
+[data-palette="magenta"][data-scheme="dark"] {
+  --bg: #110b17;
+  --surface: #1a1223;
+  --surface-2: #241830;
+  --ink: #f5edf9;
+  --muted: #b4a2c3;
+  --line: #33253f;
+  --accent: #ff5fae;
+  --accent-hover: #ff86c3;
+  --accent-ink: #250818;
+  --accent-soft: #4a1638;
+  --ok: #74d3a3;
+  --ok-soft: #12301f;
+  --danger: #ff8b8b;
+  --danger-soft: #3b1618;
+  --vinyl: #08050b;
+  --vinyl-groove: #1d1526;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.45);
+  color-scheme: dark;
+}
+
+/* ---------- Fonts ---------- */
+/* Web fonts come from Google Fonts. Without a connection, each falls back to a system font. */
+
+:root,
+[data-font="classic"] {
+  --font-heading: var(--serif);
+  --font-body: var(--sans);
+  --heading-weight: 600;
+  --heading-case: none;
+  --heading-tracking: 0;
+}
+
+[data-font="retro"] {
+  --font-heading: "Fraunces", Georgia, serif;
+  --font-body: "DM Sans", var(--sans);
+  --heading-weight: 700;
+  --heading-case: none;
+  --heading-tracking: -0.01em;
+}
+
+[data-font="modern"] {
+  --font-heading: "Space Grotesk", var(--sans);
+  --font-body: "Inter", var(--sans);
+  --heading-weight: 600;
+  --heading-case: none;
+  --heading-tracking: -0.01em;
+}
+
+[data-font="poster"] {
+  --font-heading: "Oswald", "Arial Narrow", var(--sans);
+  --font-body: "Work Sans", var(--sans);
+  --heading-weight: 600;
+  --heading-case: uppercase;
+  --heading-tracking: 0.02em;
 }
 
 /* ---------- Base ---------- */
@@ -59,15 +234,17 @@ body {
   min-height: 100vh;
   background: var(--bg);
   color: var(--ink);
-  font: 16px/1.5 var(--sans);
+  font: 16px/1.5 var(--font-body);
 }
 
 [hidden] { display: none !important; }
 
 h1, h2, h3 {
   margin: 0;
-  font-family: var(--serif);
-  font-weight: 600;
+  font-family: var(--font-heading);
+  font-weight: var(--heading-weight);
+  letter-spacing: var(--heading-tracking);
+  text-transform: var(--heading-case);
   line-height: 1.2;
 }
 
@@ -108,14 +285,25 @@ a { color: var(--accent); }
   padding-bottom: 12px;
 }
 
+.brand-row {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.theme-btn { margin-left: auto; }
+
 .brand {
   display: inline-flex;
   align-items: center;
   gap: 10px;
   color: var(--ink);
-  font-family: var(--serif);
+  font-family: var(--font-heading);
   font-size: 1.25rem;
-  font-weight: 600;
+  font-weight: var(--heading-weight);
+  letter-spacing: var(--heading-tracking);
+  text-transform: var(--heading-case);
   text-decoration: none;
 }
 
@@ -544,7 +732,7 @@ button.wished {
 .artist-count {
   margin-left: 8px;
   color: var(--muted);
-  font-family: var(--sans);
+  font-family: var(--font-body);
   font-size: 0.8rem;
   font-weight: 600;
 }
@@ -621,9 +809,11 @@ button.wished {
 .cover-lg .cover-ph::before { display: none; }
 
 .sleeve-title {
-  font-family: var(--serif);
+  font-family: var(--font-heading);
   font-size: 1.35rem;
-  font-weight: 600;
+  font-weight: var(--heading-weight);
+  letter-spacing: var(--heading-tracking);
+  text-transform: var(--heading-case);
   line-height: 1.15;
   overflow-wrap: anywhere;
 }
@@ -675,7 +865,7 @@ button.wished {
 
 .sleeve-empty {
   color: var(--muted);
-  font-family: var(--serif);
+  font-family: var(--font-heading);
   font-size: 4rem;
 }
 
@@ -826,6 +1016,75 @@ dialog::backdrop { background: rgb(20 14 10 / 0.5); }
 }
 
 .spacer { flex: 1; }
+
+/* ---------- Theme picker ---------- */
+
+.look-form { padding: 18px; }
+.look-form > p { margin: 6px 0 0; }
+
+.look-group {
+  margin: 18px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.look-group legend {
+  margin-bottom: 8px;
+  padding: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.look-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px 14px 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.look-choice input {
+  width: auto;
+  min-height: 0;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.look-choice:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* Each swatch carries its own palette, so it shows that palette's colors. */
+.swatch {
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent) 0 50%, var(--bg) 50%);
+}
+
+/* Each font name is set in its own heading font. */
+.font-sample {
+  font-family: var(--font-heading);
+  font-size: 1.05rem;
+  font-weight: var(--heading-weight);
+  letter-spacing: var(--heading-tracking);
+  text-transform: var(--heading-case);
+}
 
 /* ---------- Toast ---------- */
 

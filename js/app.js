@@ -55,6 +55,9 @@
     return `hsl(${hue(`${item.artist || ''}${item.title || ''}`)} 55% 52%)`;
   }
 
+  // Cover Art Archive sizes in pixels, about 3x the size shown so covers stay sharp on phone screens.
+  const COVER_SIZES = { sm: [500], md: [500], lg: [1200, 500] };
+
   // Cover art from the Cover Art Archive, over a placeholder for when there is none:
   // a vinyl label for thumbnails, a plain sleeve with the title for the big random pick.
   function cover(item, size) {
@@ -65,9 +68,16 @@
     placeholder.style.setProperty('--label', labelColor(item));
     box.append(placeholder);
     if (item.releaseGroupId) {
-      const img = h('img', { src: mb.coverUrl(item.releaseGroupId, size === 'lg' ? 500 : 250), alt: '', loading: 'lazy', decoding: 'async' });
+      const sizes = COVER_SIZES[size];
+      let attempt = 0;
+      const img = h('img', { src: mb.coverUrl(item.releaseGroupId, sizes[0]), alt: '', loading: 'lazy', decoding: 'async' });
       img.addEventListener('load', () => box.classList.add('loaded'));
-      img.addEventListener('error', () => img.remove());
+      // Try the next size down if the big one isn't there, then leave the placeholder showing.
+      img.addEventListener('error', () => {
+        attempt += 1;
+        if (attempt < sizes.length) img.src = mb.coverUrl(item.releaseGroupId, sizes[attempt]);
+        else img.remove();
+      });
       box.append(img);
     }
     return box;
@@ -757,6 +767,54 @@
     }
   }
 
+  // ---------- Theme ----------
+
+  // The page head applies the saved theme (RC.applyLook) before anything draws; this is the picker.
+  const LOOK_OPTIONS = {
+    palette: [
+      { key: 'orange', label: 'Burnt orange' },
+      { key: 'cobalt', label: 'Cobalt' },
+      { key: 'olive', label: 'Olive' },
+      { key: 'magenta', label: 'Magenta' },
+    ],
+    font: [
+      { key: 'classic', label: 'Classic' },
+      { key: 'retro', label: 'Retro' },
+      { key: 'modern', label: 'Modern' },
+      { key: 'poster', label: 'Poster' },
+    ],
+    mode: [
+      { key: 'auto', label: 'Match device' },
+      { key: 'light', label: 'Light' },
+      { key: 'dark', label: 'Dark' },
+    ],
+  };
+
+  function currentLook() {
+    return { palette: 'orange', font: 'classic', mode: 'auto', ...store.getPref('look', {}) };
+  }
+
+  function setLook(change) {
+    const look = { ...currentLook(), ...change };
+    store.setPref('look', look);
+    RC.applyLook(look);
+    renderLookChoices();
+  }
+
+  // Each choice previews itself: swatches carry their own palette, font names their own font.
+  function renderLookChoices() {
+    const look = currentLook();
+    const scheme = document.documentElement.getAttribute('data-scheme');
+    for (const [kind, options] of Object.entries(LOOK_OPTIONS)) {
+      $(`#look-${kind}`).replaceChildren(...options.map((option) => h('label', { class: 'look-choice' },
+        h('input', {
+          type: 'radio', name: `look-${kind}`, value: option.key, checked: look[kind] === option.key, onchange: () => setLook({ [kind]: option.key }),
+        }),
+        kind === 'palette' ? h('span', { class: 'swatch', 'data-palette': option.key, 'data-scheme': scheme, 'aria-hidden': 'true' }) : null,
+        kind === 'font' ? h('span', { class: 'font-sample', 'data-font': option.key }, option.label) : option.label)));
+    }
+  }
+
   // ---------- Wire up ----------
 
   fillFormatSelect($('#filter-format'), 'All formats');
@@ -810,6 +868,18 @@
     if (currentView() === 'random') renderRandomFilters();
     if (currentView() === 'discography') renderDiscoArtists();
   });
+
+  $('#theme-btn').addEventListener('click', () => {
+    renderLookChoices();
+    $('#look-dialog').showModal();
+  });
+  // "Match device" follows the phone switching between light and dark.
+  if (window.matchMedia) {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      RC.applyLook(currentLook());
+      renderLookChoices();
+    });
+  }
 
   window.addEventListener('hashchange', showView);
   renderCollection();
