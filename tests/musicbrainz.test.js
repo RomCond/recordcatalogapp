@@ -117,7 +117,7 @@ test('a cancelled search never reaches MusicBrainz', async (t) => {
   assert.equal(fetchMock.mock.callCount(), 0);
 });
 
-test('getDiscography pages through release groups and counts vinyl releases', async (t) => {
+test('getDiscography pages through release groups and marks the ones on vinyl', async (t) => {
   const calls = [];
   const release = (group, status, ...formats) => ({ status, 'release-group': { id: group }, media: formats.map((format) => ({ format })) });
   t.mock.method(globalThis, 'fetch', async (url) => {
@@ -132,13 +132,15 @@ test('getDiscography pages through release groups and counts vinyl releases', as
       });
     }
     return jsonResponse({
-      count: 5,
+      count: 7,
       releases: [
         release('g0', 'Official', '12" Vinyl', '12" Vinyl'),
         release('g0', 'Official', '7" Vinyl'),
         release('g1', 'Bootleg', '12" Vinyl'), // bootlegs don't count
         release('g2', 'Official', 'CD'), // a non-vinyl match is ignored
-        release('g3', 'Promotion', 'Flexi-disc'),
+        release('g3', 'Official', 'Flexi-disc'), // flexi-discs don't count
+        release('g4', 'Official', 'VinylDisc'), // a CD/vinyl hybrid isn't a vinyl pressing
+        release('g5', 'Promotion', 'CD', 'Vinyl'),
       ],
     });
   });
@@ -147,14 +149,14 @@ test('getDiscography pages through release groups and counts vinyl releases', as
 
   assert.deepEqual(calls.map((u) => `${u.pathname}@${u.searchParams.get('offset')}`),
     ['/ws/2/release-group@0', '/ws/2/release-group@100', '/ws/2/release@0']);
-  assert.equal(calls[2].searchParams.get('query'), 'arid:"a1" AND format:(vinyl OR 7vinyl OR 10vinyl OR 12vinyl OR flexidisc)');
+  assert.equal(calls[2].searchParams.get('query'), 'arid:"a1" AND format:(vinyl OR 7vinyl OR 10vinyl OR 12vinyl)');
   assert.deepEqual(progress, [
     { step: 'releases', loaded: 100, total: 120 },
     { step: 'releases', loaded: 120, total: 120 },
-    { step: 'vinyl', loaded: 5, total: 5 },
+    { step: 'vinyl', loaded: 7, total: 7 },
   ]);
   assert.equal(result.groups.length, 120);
-  assert.deepEqual(result.groups.slice(0, 5).map((g) => g.vinyl), [2, 0, 0, 1, 0]);
+  assert.deepEqual(result.groups.slice(0, 7).map((g) => g.vinyl), [true, false, false, false, false, true, false]);
   assert.equal(result.truncated, false);
   assert.equal(result.vinylComplete, true);
 });

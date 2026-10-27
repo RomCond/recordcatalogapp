@@ -11,10 +11,10 @@
 
   const KEYS = {
     records: 'recordcatalog.records.v1',
-    discographies: 'recordcatalog.discographies.v2', // v2 adds vinyl release counts
+    discographies: 'recordcatalog.discographies.v3', // v3: whether each release has a vinyl pressing
     prefs: 'recordcatalog.prefs.v1',
   };
-  const OLD_KEYS = ['recordcatalog.discographies.v1'];
+  const OLD_KEYS = ['recordcatalog.discographies.v1', 'recordcatalog.discographies.v2'];
 
   const FORMATS = ['LP', 'Double LP', 'EP', '7" single', '12" single', 'Box set', 'CD', 'Cassette', 'Other'];
 

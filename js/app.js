@@ -558,7 +558,7 @@
     const { items, unmatched } = S.compareDiscography(disco.groups, store.all(), disco.artist);
 
     // Records you own always count. With "Vinyl only" on, a missing one needs a vinyl pressing on MusicBrainz.
-    const eligible = items.filter((item) => !vinylOnly || item.records.length || item.group.vinyl > 0);
+    const eligible = items.filter((item) => !vinylOnly || item.records.length || item.group.vinyl);
     const countIn = (key) => eligible.filter((item) => S.categoryOf(item.group) === key).length;
 
     $('#disco-filters').replaceChildren(
@@ -590,7 +590,7 @@
     $('#disco-updated').textContent = meta(
       `Updated ${ago(disco.fetchedAt)}`,
       disco.truncated && `Showing the first ${disco.groups.length} of ${disco.total} releases`,
-      disco.vinylComplete === false && 'This artist has a huge number of vinyl releases, so a few may not be counted');
+      disco.vinylComplete === false && 'This artist has a huge number of vinyl releases, so a few may be missed');
 
     const groupCover = (group) => cover({ releaseGroupId: group.id, artist: disco.artist.name, title: group.title }, 'sm');
 
@@ -600,10 +600,7 @@
       groupCover(group),
       h('div', { class: 'result-text' },
         h('span', { class: 'record-title' }, group.title),
-        h('span', { class: 'record-meta' }, meta(
-          mb.yearOf(group.date),
-          typeLabel(group),
-          group.vinyl ? plural(group.vinyl, 'vinyl release') : 'No vinyl listed'))),
+        h('span', { class: 'record-meta' }, meta(mb.yearOf(group.date), typeLabel(group), !group.vinyl && 'No vinyl listed'))),
       h('button', { type: 'button', onclick: () => addFromGroup(group) }, 'Got it'))));
     const missingEmpty = $('#disco-missing-empty');
     missingEmpty.hidden = missing.length > 0 || !visible.length;

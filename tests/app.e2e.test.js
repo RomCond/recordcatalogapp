@@ -42,7 +42,8 @@ const DISCOGRAPHIES = {
 };
 
 // Answers to the "vinyl releases by this artist" search. Pablo Honey only has a bootleg
-// and a CD that slipped into the results, so it should count as having no vinyl.
+// and a CD that slipped into the results, and the live album only a flexi-disc,
+// so neither should count as having a vinyl pressing.
 const vinylRelease = (group, format, status = 'Official') => ({ status, 'release-group': { id: group }, media: [{ format }] });
 const VINYL_RELEASES = {
   'a-radiohead': [
@@ -56,6 +57,7 @@ const VINYL_RELEASES = {
     vinylRelease('rg-amnesiac', '12" Vinyl'),
     vinylRelease('rg-amnesiac', '12" Vinyl', 'Promotion'),
     vinylRelease('rg-creep', '7" Vinyl'),
+    vinylRelease('rg-wrong', 'Flexi-disc'),
   ],
   'a-portishead': ['rg-dummy', 'rg-portishead', 'rg-third'].map((id) => vinylRelease(id, '12" Vinyl')),
 };
@@ -251,8 +253,10 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     // Vinyl only is on by default: Pablo Honey has no official vinyl, so it isn't listed as missing
     assert.equal(await text(page, '#disco-progress-text'), 'You have 3 of 4');
     assert.equal(await text(page, '#missing-heading'), 'Missing (1)');
-    assert.match(await text(page, '#disco-missing'), /Amnesiac\n2001 · Album · 3 vinyl releases/);
+    // One line per album, with no count of individual pressings
+    assert.equal(await text(page, '#disco-missing'), 'Amnesiac\n2001 · Album\nGot it');
     assert.doesNotMatch(await text(page, '#disco-panel'), /Pablo Honey/);
+    assert.equal(await page.locator('.toggle', { hasText: 'Live' }).count(), 0, 'a flexi-disc alone should not count as vinyl');
     assert.match(await text(page, '#disco-unmatched'), /Live at the Astoria/);
     await assertNoJunkText(page, 'discography');
     await shot(page, '06-discography');

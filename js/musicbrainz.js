@@ -16,9 +16,11 @@
   const MAX_DISCOGRAPHY_PAGES = 15;
   const MAX_VINYL_PAGES = 30;
 
-  // Every vinyl format MusicBrainz has. Its search index stores each one as a single squashed,
-  // lowercase word ('12" Vinyl' becomes "12vinyl"), so searching for plain "vinyl" would miss most pressings.
-  const VINYL_FORMATS = ['vinyl', '7vinyl', '10vinyl', '12vinyl', 'flexidisc'];
+  // The vinyl formats that count (flexi-discs don't). MusicBrainz's search index stores each one as a
+  // single squashed, lowercase word ('12" Vinyl' becomes "12vinyl"), so searching for plain "vinyl"
+  // would miss most pressings.
+  const VINYL_FORMATS = ['vinyl', '7vinyl', '10vinyl', '12vinyl'];
+  const VINYL_FORMAT_NAME = /^(\d+" )?Vinyl$/i;
   const SKIPPED_STATUSES = ['Bootleg', 'Pseudo-Release'];
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -194,10 +196,10 @@
     }));
   }
 
-  // How many vinyl releases each of the artist's release groups has. Bootlegs don't count.
-  async function getVinylCounts(artistId, onProgress) {
+  // Ids of the artist's release groups that have at least one vinyl pressing. Bootlegs don't count.
+  async function getVinylGroupIds(artistId, onProgress) {
     const query = `arid:"${artistId}" AND format:(${VINYL_FORMATS.join(' OR ')})`;
-    const counts = {};
+    const ids = new Set();
     let seen = 0;
     let total = 0;
     for (let page = 0; page < MAX_VINYL_PAGES; page++) {
@@ -208,17 +210,17 @@
       for (const release of batch) {
         const group = release['release-group'];
         const formats = (release.media || []).map((medium) => medium.format).filter(Boolean);
-        const vinyl = !formats.length || formats.some((format) => /vinyl|flexi/i.test(format));
-        if (group && vinyl && !SKIPPED_STATUSES.includes(release.status)) counts[group.id] = (counts[group.id] || 0) + 1;
+        const vinyl = !formats.length || formats.some((format) => VINYL_FORMAT_NAME.test(format));
+        if (group && vinyl && !SKIPPED_STATUSES.includes(release.status)) ids.add(group.id);
       }
       if (onProgress) onProgress(seen, total);
       if (!batch.length || seen >= total) break;
     }
-    return { counts, complete: seen >= total };
+    return { ids, complete: seen >= total };
   }
 
   // Every album, EP and single credited to the artist, paged 100 at a time,
-  // each with a count of its vinyl releases. onProgress gets { step, loaded, total }.
+  // each marked with whether it has a vinyl pressing. onProgress gets { step, loaded, total }.
   async function getDiscography(artistId, onProgress) {
     const report = (step) => (loaded, total) => onProgress && onProgress({ step, loaded, total });
     const groups = [];
@@ -239,8 +241,8 @@
       report('releases')(groups.length, total);
       if (!batch.length || groups.length >= total) break;
     }
-    const vinyl = await getVinylCounts(artistId, report('vinyl'));
-    for (const group of groups) group.vinyl = vinyl.counts[group.id] || 0;
+    const vinyl = await getVinylGroupIds(artistId, report('vinyl'));
+    for (const group of groups) group.vinyl = vinyl.ids.has(group.id);
     return { groups, total, truncated: groups.length < total, vinylComplete: vinyl.complete };
   }
 
