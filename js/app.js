@@ -104,7 +104,18 @@
     const el = $('#toast');
     el.replaceChildren(h('span', {}, message));
     if (action) {
-      el.append(h('button', { type: 'button', class: 'toast-action', onclick: () => { action.run(); hideToast(); } }, action.label));
+      el.append(h('button', {
+        type: 'button',
+        class: 'toast-action',
+        onclick: () => {
+          hideToast();
+          try {
+            action.run();
+          } catch (e) {
+            toast(e.message); // e.g. undoing a delete after adding that album again
+          }
+        },
+      }, action.label));
     }
     el.classList.add('show');
     clearTimeout(toastTimer);
@@ -115,8 +126,15 @@
     $('#toast').classList.remove('show');
   }
 
+  // Returns the new record, or null after telling the person why it couldn't be added.
   function addWithUndo(input) {
-    const record = store.add(input);
+    let record;
+    try {
+      record = store.add(input);
+    } catch (e) {
+      toast(e.message);
+      return null;
+    }
     toast(`Added ${record.title}`, { label: 'Undo', run: () => store.remove(record.id) });
     return record;
   }
@@ -313,17 +331,14 @@
   }
 
   function renderResults() {
-    const all = store.all();
-    $('#search-results').replaceChildren(...results.map((result) => {
-      const owned = result.releaseGroupId ? all.filter((r) => r.releaseGroupId === result.releaseGroupId).length : 0;
-      return h('li', { class: 'result' },
-        cover(result, 'sm'),
-        h('div', { class: 'result-text' },
-          h('span', { class: 'record-title' }, result.title),
-          h('span', { class: 'record-meta' }, meta(result.artist, result.year, typeLabel(result), result.media)),
-          owned ? h('span', { class: 'badge' }, owned > 1 ? `${owned} in collection` : 'In collection') : null),
-        h('button', { type: 'button', class: owned ? '' : 'primary', onclick: () => addFromResult(result) }, owned ? 'Add again' : 'Add'));
-    }));
+    $('#search-results').replaceChildren(...results.map((result) => h('li', { class: 'result' },
+      cover(result, 'sm'),
+      h('div', { class: 'result-text' },
+        h('span', { class: 'record-title' }, result.title),
+        h('span', { class: 'record-meta' }, meta(result.artist, result.year, typeLabel(result), result.media))),
+      store.findCopy(result)
+        ? h('button', { type: 'button', disabled: true }, 'In collection')
+        : h('button', { type: 'button', class: 'primary', onclick: () => addFromResult(result) }, 'Add'))));
   }
 
   function addFromResult(result) {
@@ -353,18 +368,14 @@
     event.preventDefault();
     const form = event.target;
     const fields = form.elements;
-    try {
-      addWithUndo({
-        artist: fields.artist.value,
-        title: fields.title.value,
-        year: fields.year.value,
-        format: fields.format.value,
-        notes: fields.notes.value,
-      });
-    } catch (e) {
-      toast(e.message);
-      return;
-    }
+    const added = addWithUndo({
+      artist: fields.artist.value,
+      title: fields.title.value,
+      year: fields.year.value,
+      format: fields.format.value,
+      notes: fields.notes.value,
+    });
+    if (!added) return;
     // Keep the artist filled in, since people often add several records by one artist.
     const artist = fields.artist.value;
     form.reset();
@@ -521,10 +532,14 @@
       $('#disco-panel').hidden = true;
       setStatus('#artist-status', `Loading the discography for ${artist.name}…`, 'busy');
       try {
-        const fetched = await mb.getDiscography(artist.id, (loaded, total) => {
-          if (token === discoToken && total > 100) {
-            setStatus('#artist-status', `Loading the discography for ${artist.name}… ${loaded} of ${total}`, 'busy');
-          }
+        const fetched = await mb.getDiscography(artist.id, ({ step, loaded, total }) => {
+          if (token !== discoToken) return;
+          const doing = {
+            releases: `Loading the discography for ${artist.name}`,
+            vinyl: 'Checking which releases came out on vinyl',
+            deluxe: 'Looking for deluxe editions',
+          }[step];
+          setStatus('#artist-status', total > 100 ? `${doing}… ${loaded} of ${total}` : `${doing}…`, 'busy');
         });
         data = store.saveDiscography(artist.id, { name: artist.name, ...fetched });
       } catch (e) {
@@ -554,74 +569,89 @@
   function renderDiscography() {
     if (!disco) return;
     const enabled = enabledCategories();
+    const vinylOnly = store.getPref('vinylOnly', true);
     const { items, unmatched } = S.compareDiscography(disco.groups, store.all(), disco.artist);
 
-    const presentCategories = S.CATEGORIES.filter((category) => disco.groups.some((g) => S.categoryOf(g) === category.key));
-    $('#disco-filters').replaceChildren(...presentCategories.map((category) => {
-      const count = disco.groups.filter((g) => S.categoryOf(g) === category.key).length;
-      return h('label', { class: 'toggle' },
+    // Records you own always count. With "Vinyl only" on, a missing one needs a vinyl pressing on MusicBrainz.
+    const eligible = items.filter((item) => !vinylOnly || item.records.length || item.vinyl);
+    const countIn = (key) => eligible.filter((item) => S.categoryOf(item.group) === key).length;
+
+    $('#disco-filters').replaceChildren(
+      h('label', { class: 'toggle' },
+        h('input', { type: 'checkbox', checked: vinylOnly, onchange: (e) => { store.setPref('vinylOnly', e.target.checked); renderDiscography(); } }),
+        'Vinyl only'),
+      h('span', { class: 'toggle-divider', 'aria-hidden': 'true' }),
+      ...S.CATEGORIES.filter((category) => countIn(category.key)).map((category) => h('label', { class: 'toggle' },
         h('input', { type: 'checkbox', checked: enabled.has(category.key), onchange: (e) => toggleCategory(category.key, e.target.checked) }),
         category.label,
-        h('span', { class: 'toggle-count' }, count));
-    }));
+        h('span', { class: 'toggle-count' }, countIn(category.key)))));
 
-    const visible = items
+    // Oldest first, with a deluxe edition right after its original.
+    const visible = eligible
       .filter((item) => enabled.has(S.categoryOf(item.group)))
-      .sort((a, b) => compare(a.group.date || '9999', b.group.date || '9999'));
+      .sort((a, b) => compare(a.group.date || '9999', b.group.date || '9999')
+        || compare(a.group.id, b.group.id)
+        || (a.edition === 'deluxe') - (b.edition === 'deluxe'));
     const owned = visible.filter((item) => item.records.length);
     const missing = visible.filter((item) => !item.records.length);
     currentMissing = missing;
 
+    let progress = `You have ${owned.length} of ${visible.length}`;
+    if (!visible.length) {
+      if (!disco.groups.length) progress = 'MusicBrainz lists no releases for this artist yet.';
+      else if (vinylOnly && !eligible.length) progress = 'MusicBrainz lists no vinyl releases for this artist. Turn off Vinyl only to see everything.';
+      else progress = 'Nothing of these types. Turn on another type below.';
+    }
     $('#disco-name').textContent = disco.artist.name;
-    $('#disco-progress-text').textContent = visible.length
-      ? `You have ${owned.length} of ${visible.length}`
-      : disco.groups.length ? 'Nothing of these types. Turn on another type below.' : 'MusicBrainz lists no releases for this artist yet.';
+    $('#disco-progress-text').textContent = progress;
     $('#disco-bar').style.width = visible.length ? `${(owned.length / visible.length) * 100}%` : '0';
     $('#disco-updated').textContent = meta(
       `Updated ${ago(disco.fetchedAt)}`,
-      disco.truncated && `Showing the first ${disco.groups.length} of ${disco.total} releases`);
+      disco.truncated && `Showing the first ${disco.groups.length} of ${disco.total} releases`,
+      disco.vinylComplete === false && 'This artist has a huge number of vinyl releases, so a few may be missed');
 
-    const groupCover = (group) => cover({ releaseGroupId: group.id, artist: disco.artist.name, title: group.title }, 'sm');
+    const itemCover = (item) => cover({ releaseGroupId: item.group.id, artist: disco.artist.name, title: item.title }, 'sm');
 
     $('#missing-heading').textContent = `Missing (${missing.length})`;
     $('#disco-copy').hidden = !missing.length;
-    $('#disco-missing').replaceChildren(...missing.map(({ group }) => h('li', { class: 'result' },
-      groupCover(group),
+    $('#disco-missing').replaceChildren(...missing.map((item) => h('li', { class: 'result' },
+      itemCover(item),
       h('div', { class: 'result-text' },
-        h('span', { class: 'record-title' }, group.title),
-        h('span', { class: 'record-meta' }, meta(mb.yearOf(group.date), typeLabel(group)))),
-      h('button', { type: 'button', onclick: () => addFromGroup(group) }, 'Got it'))));
+        h('span', { class: 'record-title' }, item.title),
+        h('span', { class: 'record-meta' }, meta(mb.yearOf(item.date), typeLabel(item.group), !item.vinyl && 'No vinyl listed'))),
+      h('button', { type: 'button', onclick: () => addFromItem(item) }, 'Got it'))));
     const missingEmpty = $('#disco-missing-empty');
     missingEmpty.hidden = missing.length > 0 || !visible.length;
     missingEmpty.textContent = 'You have every one of these.';
 
     $('#owned-heading').textContent = `On your shelf (${owned.length})`;
     $('#disco-owned-card').hidden = !owned.length;
-    $('#disco-owned').replaceChildren(...owned.map(({ group, records }) => h('li', { class: 'result' },
-      groupCover(group),
+    $('#disco-owned').replaceChildren(...owned.map((item) => h('li', { class: 'result' },
+      itemCover(item),
       h('div', { class: 'result-text' },
-        h('span', { class: 'record-title' }, group.title),
-        h('span', { class: 'record-meta' }, meta(mb.yearOf(group.date), typeLabel(group), `You have: ${records.map((r) => r.format).join(', ')}`))))));
+        h('span', { class: 'record-title' }, item.title),
+        h('span', { class: 'record-meta' }, meta(mb.yearOf(item.date), typeLabel(item.group), `You have: ${item.records.map((r) => r.format).join(', ')}`))))));
 
     $('#disco-unmatched-card').hidden = !unmatched.length;
     $('#disco-unmatched').replaceChildren(...unmatched.map((r) => recordRow(r, false)));
   }
 
-  function addFromGroup(group) {
+  // The deluxe title ("... (Deluxe Edition)") is what files the new record under the deluxe line.
+  function addFromItem(item) {
     addWithUndo({
       artist: disco.artist.name,
       artistId: disco.artist.id,
-      title: group.title,
-      year: mb.yearOf(group.date),
+      title: item.title,
+      year: mb.yearOf(item.date),
       format: $('#add-format').value,
-      releaseGroupId: group.id,
+      releaseGroupId: item.group.id,
     });
   }
 
   async function copyMissing() {
-    const lines = currentMissing.map(({ group }) => {
-      const year = mb.yearOf(group.date);
-      return `${disco.artist.name} - ${group.title}${year ? ` (${year})` : ''}`;
+    const lines = currentMissing.map((item) => {
+      const year = mb.yearOf(item.date);
+      return `${disco.artist.name} - ${item.title}${year ? ` (${year})` : ''}`;
     });
     try {
       await navigator.clipboard.writeText(lines.join('\n'));

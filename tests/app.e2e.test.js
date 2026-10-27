@@ -41,6 +41,36 @@ const DISCOGRAPHIES = {
   ],
 };
 
+// Answers to the "vinyl releases by this artist" search. Pablo Honey only has a bootleg
+// and a CD that slipped into the results, and the live album only a flexi-disc,
+// so neither should count as having a vinyl pressing.
+const vinylRelease = (group, format, status = 'Official') => ({ status, 'release-group': { id: group }, media: [{ format }] });
+const VINYL_RELEASES = {
+  'a-radiohead': [
+    vinylRelease('rg-pablo', '12" Vinyl', 'Bootleg'),
+    vinylRelease('rg-pablo', 'CD'),
+    vinylRelease('rg-bends', '12" Vinyl'),
+    vinylRelease('rg-okc', '12" Vinyl'),
+    vinylRelease('rg-okc', '12" Vinyl'),
+    vinylRelease('rg-kida', '10" Vinyl'),
+    vinylRelease('rg-amnesiac', '10" Vinyl'),
+    vinylRelease('rg-amnesiac', '12" Vinyl'),
+    vinylRelease('rg-amnesiac', '12" Vinyl', 'Promotion'),
+    vinylRelease('rg-creep', '7" Vinyl'),
+    vinylRelease('rg-wrong', 'Flexi-disc'),
+  ],
+  'a-portishead': ['rg-dummy', 'rg-portishead', 'rg-third'].map((id) => vinylRelease(id, '12" Vinyl')),
+};
+
+// Answers to the "deluxe or expanded releases by this artist" search. The Bends has a deluxe
+// edition on vinyl; Kid A's is CD only, so it only shows with Vinyl only turned off.
+const DELUXE_RELEASES = {
+  'a-radiohead': [
+    { id: 'rel-bends-dlx', title: 'The Bends', disambiguation: 'collector’s deluxe edition', date: '2009-03-24', status: 'Official', 'release-group': { id: 'rg-bends' }, media: [{ format: '12" Vinyl' }, { format: '12" Vinyl' }] },
+    { id: 'rel-kida-dlx', title: 'Kid A (Expanded Edition)', date: '2016-05-06', status: 'Official', 'release-group': { id: 'rg-kida' }, media: [{ format: 'CD' }] },
+  ],
+};
+
 function fakeMusicBrainz(url) {
   const params = url.searchParams;
   const query = params.get('query') || '';
@@ -55,6 +85,11 @@ function fakeMusicBrainz(url) {
         { ...rg('rg-oknotok', 'OK Computer OKNOTOK 1997 2017', '2017-06-23', 'Album', ['Compilation']), 'artist-credit': credit('Radiohead', 'a-radiohead') },
       ],
     };
+  }
+  if (url.pathname === '/ws/2/release' && query.startsWith('arid:')) {
+    const artistId = /arid:"([^"]+)"/.exec(query)[1];
+    const releases = (query.includes('format:') ? VINYL_RELEASES : DELUXE_RELEASES)[artistId] || [];
+    return { count: releases.length, offset: 0, releases };
   }
   if (url.pathname === '/ws/2/release' && query.startsWith('barcode:')) {
     return {
@@ -152,7 +187,10 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     await page.locator('#search-results .result').first().getByRole('button', { name: 'Add' }).click();
     await page.locator('#toast.show', { hasText: 'Added OK Computer' }).waitFor();
     assert.equal(await text(page, '#nav-count'), '1');
-    assert.equal(await text(page, '#search-results .result:first-child .badge'), 'In collection');
+    // Only one copy: an album you have can't be added again
+    const addedButton = page.locator('#search-results .result').first().getByRole('button');
+    assert.equal(await addedButton.innerText(), 'In collection');
+    assert.ok(await addedButton.isDisabled());
     await shot(page, '02-search');
 
     // The same box takes a barcode, and the lookup picks the format from the release
@@ -179,6 +217,13 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     await manual.locator('button[type=submit]').click();
     assert.equal(await text(page, '#nav-count'), '5');
 
+    // Typing in an album you already have is turned away, and the form keeps what you typed
+    await manual.locator('[name=title]').fill('dummy');
+    await manual.locator('button[type=submit]').click();
+    await page.locator('#toast.show', { hasText: '"Dummy" is already in your collection.' }).waitFor();
+    assert.equal(await text(page, '#nav-count'), '5');
+    assert.equal(await manual.locator('[name=title]').inputValue(), 'dummy');
+
     // Collection, grouped by artist
     await page.click('a[href="#collection"]');
     assert.equal(await text(page, '#collection-summary'), '5 records by 2 artists');
@@ -196,7 +241,8 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     await page.fill('#edit-form [name=notes]', 'Found at a yard sale');
     await shot(page, '04-edit');
     await page.click('#edit-form button[value=save]');
-    assert.match(await text(page, '.record:has-text("Dummy")'), /CD/);
+    // The dialog's close event fires a moment after the click, so wait for the list to update.
+    await page.locator('.record', { hasText: 'Dummy' }).filter({ hasText: 'CD' }).waitFor();
     await page.locator('.record', { hasText: 'Dummy' }).click();
     await page.click('#edit-delete');
     assert.equal(await text(page, '#nav-count'), '4');
@@ -224,56 +270,76 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     await page.locator('.artist-group', { hasText: 'Radiohead' }).getByRole('button', { name: 'Discography' }).click();
     await page.locator('#disco-panel').waitFor();
     assert.equal(await text(page, '#disco-name'), 'Radiohead');
+    // Vinyl only is on by default: Pablo Honey has no official vinyl, so it isn't listed as missing.
+    // The Bends has a deluxe edition on vinyl, which gets its own line right after the original.
     assert.equal(await text(page, '#disco-progress-text'), 'You have 3 of 5');
     assert.equal(await text(page, '#missing-heading'), 'Missing (2)');
-    assert.match(await text(page, '#disco-missing'), /Pablo Honey[\s\S]*Amnesiac/);
+    // One line per album, with no count of individual pressings
+    assert.equal(await text(page, '#disco-missing'), 'The Bends (Deluxe Edition)\n2009 · Album\nGot it\nAmnesiac\n2001 · Album\nGot it');
+    assert.match(await text(page, '#disco-owned'), /^The Bends\n1995 · Album · You have: LP\nOK Computer/);
+    assert.doesNotMatch(await text(page, '#disco-panel'), /Pablo Honey|Kid A \(Expanded/);
+    assert.equal(await page.locator('.toggle', { hasText: 'Live' }).count(), 0, 'a flexi-disc alone should not count as vinyl');
     assert.match(await text(page, '#disco-unmatched'), /Live at the Astoria/);
     await assertNoJunkText(page, 'discography');
     await shot(page, '06-discography');
 
+    // Turning it off shows everything, including the CD-only expanded edition
+    await page.locator('.toggle', { hasText: 'Vinyl only' }).click();
+    assert.equal(await text(page, '#disco-progress-text'), 'You have 3 of 7');
+    assert.match(await text(page, '#disco-missing'), /Pablo Honey\n1993 · Album · No vinyl listed/);
+    assert.match(await text(page, '#disco-missing'), /Kid A \(Expanded Edition\)\n2016 · Album · No vinyl listed/);
+    await page.locator('.toggle', { hasText: 'Vinyl only' }).click();
+    assert.equal(await text(page, '#disco-progress-text'), 'You have 3 of 5');
+
     await page.locator('#disco-missing .result', { hasText: 'Amnesiac' }).getByRole('button', { name: 'Got it' }).click();
     assert.equal(await text(page, '#disco-progress-text'), 'You have 4 of 5');
+    // Getting the deluxe edition ticks off the deluxe line, not the original
+    await page.locator('#disco-missing .result', { hasText: 'The Bends (Deluxe Edition)' }).getByRole('button', { name: 'Got it' }).click();
+    assert.equal(await text(page, '#disco-progress-text'), 'You have 5 of 5');
+    assert.match(await text(page, '#disco-owned'), /The Bends\n1995 · Album · You have: LP\nThe Bends \(Deluxe Edition\)\n2009 · Album · You have: LP/);
+    assert.equal(await text(page, '#disco-missing-empty'), 'You have every one of these.');
     await page.locator('.toggle', { hasText: 'Singles' }).click();
-    assert.equal(await text(page, '#disco-progress-text'), 'You have 4 of 6');
+    assert.equal(await text(page, '#disco-progress-text'), 'You have 5 of 6');
 
     // Copy the missing list
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.click('#disco-copy');
-    await page.locator('#toast.show', { hasText: 'Copied 2 titles' }).waitFor();
+    await page.locator('#toast.show', { hasText: 'Copied 1 title' }).waitFor();
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'Radiohead - Creep (1992)');
 
     // Portishead has no id yet, so the app looks the name up once and remembers it
     const callsBefore = mbCalls.length;
     await page.selectOption('#disco-artist', { label: 'Portishead (1)' });
     await page.locator('#disco-name', { hasText: 'Portishead' }).waitFor();
     assert.equal(await text(page, '#disco-progress-text'), 'You have 1 of 3');
-    assert.deepEqual(mbCalls.slice(callsBefore).map((u) => u.pathname), ['/ws/2/artist', '/ws/2/release-group']);
+    assert.deepEqual(mbCalls.slice(callsBefore).map((u) => u.pathname), ['/ws/2/artist', '/ws/2/release-group', '/ws/2/release', '/ws/2/release']);
     const linked = await page.evaluate(() => JSON.parse(localStorage.getItem('recordcatalog.records.v1')).find((r) => r.title === 'Dummy').artistId);
     assert.equal(linked, 'a-portishead');
 
     // Cached: coming back to Radiohead makes no new requests
     const callsCached = mbCalls.length;
-    await page.selectOption('#disco-artist', { label: 'Radiohead (5)' });
+    await page.selectOption('#disco-artist', { label: 'Radiohead (6)' });
     await page.locator('#disco-name', { hasText: 'Radiohead' }).waitFor();
     assert.equal(mbCalls.length, callsCached);
 
     // Survives a reload, including the type filter
     await page.reload();
-    assert.equal(await text(page, '#nav-count'), '6');
+    assert.equal(await text(page, '#nav-count'), '7');
     await page.goto(`${PAGE_URL}#discography`);
-    await page.selectOption('#disco-artist', { label: 'Radiohead (5)' });
-    assert.equal(await text(page, '#disco-progress-text'), 'You have 4 of 6');
+    await page.selectOption('#disco-artist', { label: 'Radiohead (6)' });
+    assert.equal(await text(page, '#disco-progress-text'), 'You have 5 of 6');
 
     // Backup, wipe, restore
     await page.click('a[href="#collection"]');
     const [download] = await Promise.all([page.waitForEvent('download'), page.click('#export-btn')]);
     const backupPath = await download.path();
-    assert.equal(JSON.parse(fs.readFileSync(backupPath, 'utf8')).records.length, 6);
+    assert.equal(JSON.parse(fs.readFileSync(backupPath, 'utf8')).records.length, 7);
     await page.evaluate(() => localStorage.clear());
     await page.reload();
     assert.ok(await page.locator('#collection-empty').isVisible());
     await page.setInputFiles('#import-file', backupPath);
-    await page.locator('#toast.show', { hasText: 'Imported 6 records' }).waitFor();
-    assert.equal(await text(page, '#nav-count'), '6');
+    await page.locator('#toast.show', { hasText: 'Imported 7 records' }).waitFor();
+    assert.equal(await text(page, '#nav-count'), '7');
 
     assert.deepEqual(errors, []);
     await context.close();
