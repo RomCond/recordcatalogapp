@@ -46,27 +46,28 @@ test('mediaLabel and creditName read like the sleeve', () => {
   assert.equal(creditName([{ name: 'Simon', joinphrase: ' & ' }, { name: 'Garfunkel' }]), 'Simon & Garfunkel');
 });
 
-test('search looks for the text in titles and artist names, and maps results', async (t) => {
+// A release as the release search returns it.
+const pressing = (id, group, { title = group.title, note = '', status = 'Official', date = '', score = 100, formats = ['12" Vinyl'], artist = 'Radiohead' } = {}) => ({
+  id, title, disambiguation: note, status, date, score,
+  'release-group': { id: group.id, title: group.title, 'primary-type': group.type, 'secondary-types': group.secondary || [] },
+  'artist-credit': [{ name: artist, artist: { id: 'a1', name: artist } }],
+  media: formats.map((format) => ({ format })),
+});
+
+test('search looks for vinyl pressings by title or artist name, and maps results', async (t) => {
   const calls = [];
+  const okc = { id: 'rg1', title: 'OK Computer', type: 'Album' };
   t.mock.method(globalThis, 'fetch', async (url) => {
     calls.push(new URL(url));
-    return jsonResponse({
-      'release-groups': [{
-        id: 'rg1',
-        title: 'OK Computer',
-        score: 100,
-        'primary-type': 'Album',
-        'first-release-date': '1997-05-21',
-        'artist-credit': [{ name: 'Radiohead', artist: { id: 'a1', name: 'Radiohead' } }],
-      }],
-    });
+    return jsonResponse({ releases: [pressing('r1', okc, { date: '1997-06-16' })] });
   });
   const { results } = await mb.search('radiohead ok comp');
-  assert.equal(calls[0].pathname, '/ws/2/release-group');
+  assert.equal(calls[0].pathname, '/ws/2/release');
   assert.equal(calls[0].searchParams.get('fmt'), 'json');
   assert.equal(calls[0].searchParams.get('query'),
-    '(releasegroup:"radiohead ok comp"^3 OR releasegroup:(radiohead ok comp comp*))'
-    + ' OR (artist:"radiohead ok comp"^3 OR artist:(radiohead ok comp comp*))');
+    '((release:"radiohead ok comp"^3 OR release:(radiohead ok comp comp*))'
+    + ' OR (artist:"radiohead ok comp"^3 OR artist:(radiohead ok comp comp*)))'
+    + ' AND format:(vinyl OR 7vinyl OR 10vinyl OR 12vinyl)');
   assert.deepEqual(results[0], {
     releaseGroupId: 'rg1',
     releaseId: null,
@@ -81,18 +82,41 @@ test('search looks for the text in titles and artist names, and maps results', a
   });
 });
 
-test('equal scores put plain albums first, then EPs and singles, oldest first', async (t) => {
-  const group = (id, score, type, date, secondary = []) => ({
-    id, title: id, score, 'primary-type': type, 'secondary-types': secondary, 'first-release-date': date, 'artist-credit': [],
-  });
+test('search shows each vinyl album or single once, and leaves out what never came out on vinyl', async (t) => {
+  const okc = { id: 'okc', title: 'OK Computer', type: 'Album' };
+  const creep = { id: 'creep', title: 'Creep', type: 'Single' };
+  const sampler = { id: 'sampler', title: 'Promo Sampler', type: 'EP' };
+  const bends = { id: 'bends', title: 'The Bends', type: 'Album' };
   t.mock.method(globalThis, 'fetch', async () => jsonResponse({
-    'release-groups': [
-      group('single', 100, 'Single', '1992'),
-      group('live', 100, 'Album', '1994', ['Live']),
-      group('later-album', 100, 'Album', '2000'),
-      group('ep', 100, 'EP', '1993'),
-      group('early-album', 100, 'Album', '1993'),
-      group('weaker-match', 80, 'Album', '1990'),
+    releases: [
+      pressing('r1', okc, { date: '2008-08-19', score: 90 }),
+      pressing('r2', okc, { date: '1997-06-16', score: 100 }), // the earliest pressing gives the year
+      pressing('r3', creep, { date: '1992-09-21', formats: ['7" Vinyl'], score: 95 }),
+      pressing('r4', sampler, { formats: ['CD'] }), // matched, but it's a CD
+      pressing('r5', sampler, { status: 'Bootleg' }), // bootleg vinyl doesn't count
+      pressing('r6', bends, { note: 'collector’s deluxe edition', date: '2009-03-24', score: 80 }),
+      pressing('r7', bends, { date: '1995-03-13', score: 70 }),
+    ],
+  }));
+  const { results } = await mb.search('radiohead');
+  assert.deepEqual(results.map((r) => [r.title, r.year]), [
+    ['OK Computer', 1997],
+    ['Creep', 1992],
+    ['The Bends (Deluxe Edition)', 2009],
+    ['The Bends', 1995],
+  ]);
+});
+
+test('equal scores put plain albums first, then EPs and singles, oldest first', async (t) => {
+  const group = (id, type, secondary) => ({ id, title: id, type, secondary });
+  t.mock.method(globalThis, 'fetch', async () => jsonResponse({
+    releases: [
+      pressing('r1', group('single', 'Single'), { date: '1992' }),
+      pressing('r2', group('live', 'Album', ['Live']), { date: '1994' }),
+      pressing('r3', group('later-album', 'Album'), { date: '2000' }),
+      pressing('r4', group('ep', 'EP'), { date: '1993' }),
+      pressing('r5', group('early-album', 'Album'), { date: '1993' }),
+      pressing('r6', group('weaker-match', 'Album'), { date: '1990', score: 80 }),
     ],
   }));
   const { results } = await mb.search('radiohead');

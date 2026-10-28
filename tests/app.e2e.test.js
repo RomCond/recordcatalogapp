@@ -78,18 +78,30 @@ function fakeMusicBrainz(url) {
     const groups = DISCOGRAPHIES[params.get('artist')] || [];
     return { 'release-group-count': groups.length, 'release-group-offset': 0, 'release-groups': groups };
   }
-  if (url.pathname === '/ws/2/release-group') {
-    return {
-      'release-groups': [
-        { ...rg('rg-okc', 'OK Computer', '1997-05-21'), 'artist-credit': credit('Radiohead', 'a-radiohead') },
-        { ...rg('rg-oknotok', 'OK Computer OKNOTOK 1997 2017', '2017-06-23', 'Album', ['Compilation']), 'artist-credit': credit('Radiohead', 'a-radiohead') },
-      ],
-    };
-  }
   if (url.pathname === '/ws/2/release' && query.startsWith('arid:')) {
     const artistId = /arid:"([^"]+)"/.exec(query)[1];
     const releases = (query.includes('format:') ? VINYL_RELEASES : DELUXE_RELEASES)[artistId] || [];
     return { count: releases.length, offset: 0, releases };
+  }
+  if (url.pathname === '/ws/2/release' && !query.startsWith('barcode:')) {
+    // Typed search: vinyl pressings, grouped into albums by the app. Two pressings of OK Computer
+    // show as one result; the CD and the bootleg are left out.
+    const pressing = (id, group, extra = {}) => ({
+      id, status: 'Official', score: 100, title: group.title, date: group.date,
+      'release-group': { id: group.id, title: group.title, 'primary-type': 'Album', 'secondary-types': group.secondary || [] },
+      'artist-credit': credit('Radiohead', 'a-radiohead'), media: [{ format: '12" Vinyl' }], ...extra,
+    });
+    const okc = { id: 'rg-okc', title: 'OK Computer', date: '1997-06-16' };
+    const oknotok = { id: 'rg-oknotok', title: 'OK Computer OKNOTOK 1997 2017', date: '2017-06-23', secondary: ['Compilation'] };
+    return {
+      releases: [
+        pressing('rel-okc-1', okc),
+        pressing('rel-okc-2', okc, { date: '2016-05-06' }),
+        pressing('rel-oknotok', oknotok, { score: 90, media: [{ format: '12" Vinyl' }, { format: '12" Vinyl' }, { format: '12" Vinyl' }] }),
+        pressing('rel-okc-cd', okc, { media: [{ format: 'CD' }] }),
+        pressing('rel-boot', { id: 'rg-boot', title: 'OK Computer Live', date: '1998' }, { status: 'Bootleg' }),
+      ],
+    };
   }
   if (url.pathname === '/ws/2/release' && query === 'barcode:0724384260927') {
     return {

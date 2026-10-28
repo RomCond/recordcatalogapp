@@ -468,7 +468,7 @@
       results = found;
       let note = '';
       if (!found.length && hiddenNonVinyl) note = 'That barcode is for a CD or cassette, not a vinyl record.';
-      else if (!found.length) note = 'Nothing found. Try fewer words, check the spelling, or add it by hand below.';
+      else if (!found.length) note = 'No vinyl records found. Try fewer words, check the spelling, or add it by hand below.';
       setStatus('#search-status', note);
       renderResults();
     } catch (e) {

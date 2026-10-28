@@ -114,6 +114,11 @@
     return (credit && credit[0] && credit[0].artist && credit[0].artist.id) || null;
   }
 
+  // A release's medium formats, like ['12" Vinyl', 'CD'].
+  function formatsOf(release) {
+    return (release.media || []).map((medium) => medium.format).filter(Boolean);
+  }
+
   function yearOf(date) {
     const match = /^(\d{4})/.exec(date || '');
     return match ? Number(match[1]) : null;
@@ -139,40 +144,63 @@
 
   // ---------- Public calls ----------
 
-  // Free text matched against both album titles and artist names, so any part of either works.
+  /*
+   * Free text matched against release titles and artist names, so any part of either works.
+   * Only vinyl pressings are searched (bootlegs left out), then grouped back into albums: each album
+   * or single shows once however many pressings match, and a deluxe or expanded edition gets its own
+   * line, like in the discography. So a single that never came out on vinyl doesn't show up at all.
+   * The year is the earliest matching vinyl pressing.
+   */
   async function searchReleaseGroups(text, signal) {
-    const query = ['releasegroup', 'artist'].map((name) => field(name, text, true)).join(' OR ');
-    const data = await get('release-group', { query, limit: 40 }, signal);
-    const groups = (data['release-groups'] || []).slice().sort((a, b) =>
-      (b.score || 0) - (a.score || 0)
-      || typeRank(a) - typeRank(b)
-      || (a['first-release-date'] || '9999').localeCompare(b['first-release-date'] || '9999'));
-    return groups.map((group) => ({
-      releaseGroupId: group.id,
-      releaseId: null,
-      title: group.title,
-      artist: creditName(group['artist-credit']),
-      artistId: mainArtistId(group['artist-credit']),
-      year: yearOf(group['first-release-date']),
-      primaryType: group['primary-type'] || null,
-      secondaryTypes: group['secondary-types'] || [],
-      formatHint: null,
-      media: '',
-    }));
+    const words = ['release', 'artist'].map((name) => field(name, text, true)).join(' OR ');
+    const query = `(${words}) AND format:(${VINYL_FORMATS.join(' OR ')})`;
+    const data = await get('release', { query, limit: 100 }, signal);
+
+    const albums = new Map();
+    for (const release of data.releases || []) {
+      const group = release['release-group'] || {};
+      const formats = formatsOf(release);
+      if (!group.id || SKIPPED_STATUSES.includes(release.status)) continue;
+      if (formats.length && !formats.some((format) => VINYL_FORMAT_NAME.test(format))) continue;
+
+      const groupTitle = group.title || release.title;
+      const words = `${release.title || ''} ${release.disambiguation || ''}`;
+      const edition = DELUXE_WORDS.test(words) && !DELUXE_WORDS.test(groupTitle) ? (/\bdeluxe\b/i.test(words) ? 'Deluxe' : 'Expanded') : null;
+      const key = edition ? `${group.id}:deluxe` : group.id;
+      const album = albums.get(key) || { group, groupTitle, edition, credit: release['artist-credit'], score: 0, date: '' };
+      if (edition === 'Deluxe') album.edition = 'Deluxe';
+      album.score = Math.max(album.score, release.score || 0);
+      if (release.date && (!album.date || release.date < album.date)) album.date = release.date;
+      albums.set(key, album);
+    }
+
+    return [...albums.values()]
+      .sort((a, b) => b.score - a.score || typeRank(a.group) - typeRank(b.group) || (a.date || '9999').localeCompare(b.date || '9999'))
+      .map((album) => ({
+        releaseGroupId: album.group.id,
+        releaseId: null,
+        title: album.edition ? `${album.groupTitle} (${album.edition} Edition)` : album.groupTitle,
+        artist: creditName(album.credit),
+        artistId: mainArtistId(album.credit),
+        year: yearOf(album.date),
+        primaryType: album.group['primary-type'] || null,
+        secondaryTypes: album.group['secondary-types'] || [],
+        formatHint: null,
+        media: '',
+      }));
   }
 
   // Only vinyl pressings come back. hiddenNonVinyl counts the CD and cassette matches left out.
   async function searchBarcode(barcode, signal) {
     const data = await get('release', { query: `barcode:${barcode}`, limit: 10 }, signal);
-    const mediaOf = (release) => (release.media || []).map((medium) => medium.format).filter(Boolean);
     const all = data.releases || [];
     const vinyl = all.filter((release) => {
-      const media = mediaOf(release);
+      const media = formatsOf(release);
       return !media.length || media.some((format) => VINYL_FORMAT_NAME.test(format));
     });
     const results = vinyl.map((release) => {
       const group = release['release-group'] || {};
-      const media = mediaOf(release);
+      const media = formatsOf(release);
       // Keep "deluxe edition" and the like in the title so the record shows which version it is.
       const note = release.disambiguation || '';
       const title = DELUXE_WORDS.test(note) && !DELUXE_WORDS.test(release.title) ? `${release.title} (${note})` : release.title;
@@ -225,7 +253,7 @@
       for (const release of batch) {
         const group = release['release-group'];
         if (!group || SKIPPED_STATUSES.includes(release.status)) continue;
-        const formats = (release.media || []).map((medium) => medium.format).filter(Boolean);
+        const formats = formatsOf(release);
         const words = `${release.title || ''} ${release.disambiguation || ''}`;
         releases.push({
           id: release.id,
