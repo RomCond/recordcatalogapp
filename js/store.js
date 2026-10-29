@@ -12,13 +12,19 @@
   const KEYS = {
     records: 'recordcatalog.records.v1',
     wishlist: 'recordcatalog.wishlist.v1',
-    discographies: 'recordcatalog.discographies.v4', // v4: vinyl yes/no plus deluxe editions
+    discographies: 'recordcatalog.discographies.v5', // v5: LP and 45/10" pressings tracked separately
     prefs: 'recordcatalog.prefs.v1',
   };
-  const OLD_KEYS = ['recordcatalog.discographies.v1', 'recordcatalog.discographies.v2', 'recordcatalog.discographies.v3'];
+  const OLD_KEYS = ['recordcatalog.discographies.v1', 'recordcatalog.discographies.v2', 'recordcatalog.discographies.v3', 'recordcatalog.discographies.v4'];
 
   // Vinyl only. Records saved earlier as CD or Cassette keep that format until you change it.
-  const FORMATS = ['LP', 'Double LP', 'EP', '7" single', '12" single', 'Box set', 'Other'];
+  const FORMATS = ['LP', 'Double LP', 'EP', '45', '10"', '12" single', 'Box set', 'Other'];
+  // 45s (7") and 10" records are only offered when the person turns them on.
+  const SMALL_FORMATS = ['45', '10"'];
+
+  // Formats renamed since earlier versions, fixed up when records are read.
+  const RENAMED_FORMATS = { '7" single': '45' };
+  const currentFormat = (format) => RENAMED_FORMATS[format] || format;
 
   // Buckets for the discography filters, in display order.
   const CATEGORIES = [
@@ -82,7 +88,7 @@
       artist,
       title,
       year: parseYear(input.year),
-      format: String(input.format || '').trim() || 'LP',
+      format: currentFormat(String(input.format || '').trim()) || 'LP',
       notes: String(input.notes || '').trim(),
       artistId: input.artistId || null,
       releaseGroupId: input.releaseGroupId || null,
@@ -117,7 +123,7 @@
     return ['album', 'ep', 'single'].includes(primary) ? primary : 'other';
   }
 
-  const SINGLE_FORMATS = ['7" single', '12" single'];
+  const SINGLE_FORMATS = ['45', '12" single'];
   const CATEGORY_RANK = { album: 0, ep: 1, single: 2, live: 3, compilation: 4, other: 5 };
 
   // When a title matches more than one release group (an album and its title single),
@@ -183,11 +189,11 @@
     const items = [];
     for (const group of groups) {
       items.push({
-        key: group.id, group, edition: 'standard', title: group.title, date: group.date, vinyl: Boolean(group.vinyl), records: standard.get(group.id),
+        key: group.id, group, edition: 'standard', title: group.title, date: group.date, vinyl: Boolean(group.vinyl), small: Boolean(group.small), records: standard.get(group.id),
       });
       if (group.deluxe) {
         items.push({
-          key: `${group.id}:deluxe`, group, edition: 'deluxe', title: group.deluxe.title, date: group.deluxe.date, vinyl: Boolean(group.deluxe.vinyl), records: deluxe.get(group.id),
+          key: `${group.id}:deluxe`, group, edition: 'deluxe', title: group.deluxe.title, date: group.deluxe.date, vinyl: Boolean(group.deluxe.vinyl), small: Boolean(group.deluxe.small), records: deluxe.get(group.id),
         });
       }
     }
@@ -253,8 +259,9 @@
       }
     }
 
-    let records = loadList(KEYS.records);
-    let wishes = loadList(KEYS.wishlist);
+    const withCurrentFormat = (record) => (RENAMED_FORMATS[record.format] ? { ...record, format: currentFormat(record.format) } : record);
+    let records = loadList(KEYS.records).map(withCurrentFormat);
+    let wishes = loadList(KEYS.wishlist).map(withCurrentFormat);
     for (const key of OLD_KEYS) {
       try {
         backend.removeItem(key);
@@ -450,6 +457,7 @@
   return {
     KEYS,
     FORMATS,
+    SMALL_FORMATS,
     CATEGORIES,
     fold,
     normTitle,

@@ -30,7 +30,8 @@ test('formatFromMedia maps MusicBrainz media to collection formats', () => {
   assert.equal(formatFromMedia(['12" Vinyl'], 'Album'), 'LP');
   assert.equal(formatFromMedia(['12" Vinyl', '12" Vinyl'], 'Album'), 'Double LP');
   assert.equal(formatFromMedia(['Vinyl', 'Vinyl', 'Vinyl'], 'Album'), 'Box set');
-  assert.equal(formatFromMedia(['7" Vinyl'], 'Single'), '7" single');
+  assert.equal(formatFromMedia(['7" Vinyl'], 'Single'), '45');
+  assert.equal(formatFromMedia(['10" Vinyl'], 'Album'), '10"');
   assert.equal(formatFromMedia(['12" Vinyl'], 'Single'), '12" single');
   assert.equal(formatFromMedia(['12" Vinyl'], 'EP'), 'EP');
   assert.equal(formatFromMedia(['CD', 'Enhanced CD'], 'Album'), null, 'CDs are not a collection format');
@@ -67,7 +68,7 @@ test('search looks for vinyl pressings by title or artist name, and maps results
   assert.equal(calls[0].searchParams.get('query'),
     '((release:"radiohead ok comp"^3 OR release:(radiohead ok comp comp*))'
     + ' OR (artist:"radiohead ok comp"^3 OR artist:(radiohead ok comp comp*)))'
-    + ' AND format:(vinyl OR 7vinyl OR 10vinyl OR 12vinyl)');
+    + ' AND format:(vinyl OR 12vinyl)', 'LPs and 12" records only, by default');
   assert.deepEqual(results[0], {
     releaseGroupId: 'rg1',
     releaseId: null,
@@ -101,10 +102,20 @@ test('search shows each vinyl album or single once, and leaves out what never ca
   const { results } = await mb.search('radiohead');
   assert.deepEqual(results.map((r) => [r.title, r.year]), [
     ['OK Computer', 1997],
-    ['Creep', 1992],
     ['The Bends (Deluxe Edition)', 2009],
     ['The Bends', 1995],
-  ]);
+  ], 'Creep only came out on 45, so it is left out');
+
+  // With 45s and 10" records turned on, the search asks for them and Creep shows up
+  const calls = [];
+  const fetchMock = globalThis.fetch;
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    calls.push(new URL(url));
+    return fetchMock(url);
+  });
+  const withSmall = await mb.search('radiohead', undefined, { small: true });
+  assert.match(calls[0].searchParams.get('query'), /AND format:\(vinyl OR 12vinyl OR 7vinyl OR 10vinyl\)$/);
+  assert.deepEqual(withSmall.results.map((r) => r.title), ['OK Computer', 'Creep', 'The Bends (Deluxe Edition)', 'The Bends']);
 });
 
 test('equal scores put plain albums first, then EPs and singles, oldest first', async (t) => {
@@ -134,14 +145,16 @@ test('a barcode in the search box looks up vinyl pressings only', async (t) => {
         release('r2', 'Japan', 'CD'),
         release('r3', '', 'Cassette'),
         release('r4', 'bundle', 'CD', '12" Vinyl'),
+        release('r5', 'single', '7" Vinyl'),
       ],
     });
   });
-  const { results, hiddenNonVinyl } = await mb.search('0 724352 775324');
+  const { results, hiddenNonVinyl, hiddenSmall } = await mb.search('0 724352 775324');
   assert.equal(calls[0].pathname, '/ws/2/release');
   assert.equal(calls[0].searchParams.get('query'), 'barcode:0724352775324');
   assert.deepEqual(results.map((r) => r.releaseId), ['r1', 'r4'], 'the CD and the cassette are left out');
   assert.equal(hiddenNonVinyl, 2);
+  assert.equal(hiddenSmall, 1, 'the 45 is left out unless 45s and 10" records are on');
   assert.deepEqual(results.map((r) => r.title), ['Pinkerton (deluxe edition)', 'Pinkerton'], 'only deluxe notes go in the title');
 });
 
@@ -169,6 +182,7 @@ test('getDiscography marks vinyl albums and finds deluxe editions', async (t) =>
     release('r7', 'g5', { status: 'Promotion' }, 'CD', 'Vinyl'),
     release('r8', 'g6', { title: 'Title 6 (Deluxe Edition)' }, '12" Vinyl'), // an album that is itself a deluxe edition
     release('r9', 'g7', { note: 'deluxe edition' }, '12" Vinyl'), // only the deluxe is on vinyl
+    release('r14', 'g8', {}, '10" Vinyl'), // only on a 10"
   ];
   const deluxeReleases = [
     release('r9', 'g7', { note: 'deluxe edition', date: '2010-11-02' }, '12" Vinyl'),
@@ -198,19 +212,21 @@ test('getDiscography marks vinyl albums and finds deluxe editions', async (t) =>
 
   assert.deepEqual(calls.map((u) => `${u.pathname}@${u.searchParams.get('offset')}`),
     ['/ws/2/release-group@0', '/ws/2/release-group@100', '/ws/2/release@0', '/ws/2/release@0']);
-  assert.equal(calls[2].searchParams.get('query'), 'arid:"a1" AND format:(vinyl OR 7vinyl OR 10vinyl OR 12vinyl)');
+  assert.equal(calls[2].searchParams.get('query'), 'arid:"a1" AND format:(vinyl OR 12vinyl OR 7vinyl OR 10vinyl)', 'every size, so the 45s and 10" setting needs no reload');
   assert.equal(calls[3].searchParams.get('query'), 'arid:"a1" AND (release:(deluxe OR expanded) OR comment:(deluxe OR expanded))');
   assert.deepEqual(progress, [
     { step: 'releases', loaded: 100, total: 120 },
     { step: 'releases', loaded: 120, total: 120 },
-    { step: 'vinyl', loaded: 9, total: 9 },
+    { step: 'vinyl', loaded: 10, total: 10 },
     { step: 'deluxe', loaded: 5, total: 5 },
   ]);
   assert.equal(result.groups.length, 120);
   assert.deepEqual(result.groups.slice(0, 10).map((g) => g.vinyl),
-    [true, false, false, false, false, true, true, false, false, false]);
-  assert.deepEqual(result.groups[7].deluxe, { title: 'Title 7 (Deluxe Edition)', date: '2010-11-01', vinyl: true, releaseIds: ['r9', 'r10'] });
-  assert.deepEqual(result.groups[8].deluxe, { title: 'Title 8 (Expanded Edition)', date: '2004', vinyl: false, releaseIds: ['r11'] });
+    [true, false, false, false, false, true, true, false, false, false], 'LP or 12" pressings');
+  assert.deepEqual(result.groups.slice(0, 10).map((g) => g.small),
+    [true, false, false, false, false, false, false, false, true, false], '45 or 10" pressings');
+  assert.deepEqual(result.groups[7].deluxe, { title: 'Title 7 (Deluxe Edition)', date: '2010-11-01', vinyl: true, small: false, releaseIds: ['r9', 'r10'] });
+  assert.deepEqual(result.groups[8].deluxe, { title: 'Title 8 (Expanded Edition)', date: '2004', vinyl: false, small: false, releaseIds: ['r11'] });
   assert.equal(result.groups[6].deluxe, null, 'an album that is already a deluxe edition gets no second deluxe line');
   assert.equal(result.groups[9].deluxe, null, 'bootleg deluxe editions do not count');
   assert.equal(result.truncated, false);

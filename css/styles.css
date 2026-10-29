@@ -343,6 +343,24 @@ button.small {
 }
 
 .add-as select { width: auto; }
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  font-size: 0.925rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.check input {
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  margin: 0;
+  accent-color: var(--accent);
+}
 .add-as .muted { font-weight: 400; }
 
 .form-grid {

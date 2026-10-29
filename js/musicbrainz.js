@@ -16,11 +16,23 @@
   const MAX_DISCOGRAPHY_PAGES = 15;
   const MAX_RELEASE_PAGES = 30;
 
-  // The vinyl formats that count. Flexi-disc and VinylDisc (a CD/vinyl hybrid) don't.
+  // The vinyl formats that count. Flexi-disc and VinylDisc (a CD/vinyl hybrid) don't. LPs and 12"
+  // records always count; 45s (7") and 10" records are "small" and count only when turned on.
   // MusicBrainz's search index stores each format as a single squashed, lowercase word
   // ('12" Vinyl' becomes "12vinyl"), so searching for plain "vinyl" would miss most pressings.
-  const VINYL_FORMATS = ['vinyl', '7vinyl', '10vinyl', '12vinyl'];
-  const VINYL_FORMAT_NAME = /^(\d+" )?Vinyl$/i;
+  const LARGE_FORMATS = ['vinyl', '12vinyl'];
+  const SMALL_FORMATS = ['7vinyl', '10vinyl'];
+  const LARGE_VINYL = /^(12" )?Vinyl$/i;
+  const SMALL_VINYL = /^(7|10)" Vinyl$/i;
+  const ANY_VINYL = /^((7|10|12)" )?Vinyl$/i;
+
+  function vinylQuery(small) {
+    return `format:(${[...LARGE_FORMATS, ...(small ? SMALL_FORMATS : [])].join(' OR ')})`;
+  }
+
+  function allowedVinyl(format, small) {
+    return LARGE_VINYL.test(format) || (small && SMALL_VINYL.test(format));
+  }
   const SKIPPED_STATUSES = ['Bootleg', 'Pseudo-Release'];
 
   // Deluxe and expanded editions add songs, so they get their own line next to the original.
@@ -127,10 +139,11 @@
   function formatFromMedia(media, primaryType) {
     if (!media.length) return null;
     const every = (pattern) => media.every((format) => pattern.test(format));
-    if (!every(VINYL_FORMAT_NAME)) return null;
+    if (!every(ANY_VINYL)) return null;
     if (media.length >= 3) return 'Box set';
     if (media.length === 2) return 'Double LP';
-    if (every(/7"/)) return '7" single';
+    if (every(/^7"/)) return '45';
+    if (every(/^10"/)) return '10"';
     if (primaryType === 'Single') return '12" single';
     if (primaryType === 'EP') return 'EP';
     return 'LP';
@@ -149,11 +162,11 @@
    * Only vinyl pressings are searched (bootlegs left out), then grouped back into albums: each album
    * or single shows once however many pressings match, and a deluxe or expanded edition gets its own
    * line, like in the discography. So a single that never came out on vinyl doesn't show up at all.
-   * The year is the earliest matching vinyl pressing.
+   * The year is the earliest matching vinyl pressing. 45s and 10" records count only when small is on.
    */
-  async function searchReleaseGroups(text, signal) {
+  async function searchReleaseGroups(text, signal, small) {
     const words = ['release', 'artist'].map((name) => field(name, text, true)).join(' OR ');
-    const query = `(${words}) AND format:(${VINYL_FORMATS.join(' OR ')})`;
+    const query = `(${words}) AND ${vinylQuery(small)}`;
     const data = await get('release', { query, limit: 100 }, signal);
 
     const albums = new Map();
@@ -161,7 +174,7 @@
       const group = release['release-group'] || {};
       const formats = formatsOf(release);
       if (!group.id || SKIPPED_STATUSES.includes(release.status)) continue;
-      if (formats.length && !formats.some((format) => VINYL_FORMAT_NAME.test(format))) continue;
+      if (formats.length && !formats.some((format) => allowedVinyl(format, small))) continue;
 
       const groupTitle = group.title || release.title;
       const words = `${release.title || ''} ${release.disambiguation || ''}`;
@@ -190,15 +203,18 @@
       }));
   }
 
-  // Only vinyl pressings come back. hiddenNonVinyl counts the CD and cassette matches left out.
-  async function searchBarcode(barcode, signal) {
+  // Only vinyl pressings come back (45s and 10" only when small is on). hiddenNonVinyl counts the
+  // CD and cassette matches left out, and hiddenSmall the 45s and 10" records left out.
+  async function searchBarcode(barcode, signal, small) {
     const data = await get('release', { query: `barcode:${barcode}`, limit: 10 }, signal);
     const all = data.releases || [];
-    const vinyl = all.filter((release) => {
+    const matches = (release, test) => {
       const media = formatsOf(release);
-      return !media.length || media.some((format) => VINYL_FORMAT_NAME.test(format));
-    });
-    const results = vinyl.map((release) => {
+      return !media.length || media.some(test);
+    };
+    const isVinyl = (release) => matches(release, (format) => ANY_VINYL.test(format));
+    const allowed = (release) => matches(release, (format) => allowedVinyl(format, small));
+    const results = all.filter(allowed).map((release) => {
       const group = release['release-group'] || {};
       const media = formatsOf(release);
       // Keep "deluxe edition" and the like in the title so the record shows which version it is.
@@ -217,13 +233,18 @@
         media: mediaLabel(media),
       };
     });
-    return { results, hiddenNonVinyl: all.length - vinyl.length };
+    return {
+      results,
+      hiddenNonVinyl: all.filter((release) => !isVinyl(release)).length,
+      hiddenSmall: all.filter((release) => isVinyl(release) && !allowed(release)).length,
+    };
   }
 
-  // What the single search box on the Add page calls. Resolves to { results, hiddenNonVinyl }.
-  async function search(text, signal) {
-    if (looksLikeBarcode(text)) return searchBarcode(text.replace(/\D/g, ''), signal);
-    return { results: await searchReleaseGroups(text, signal), hiddenNonVinyl: 0 };
+  // What the single search box on the Add page calls. Pass { small: true } to include 45s and 10"
+  // records. Resolves to { results, hiddenNonVinyl, hiddenSmall }.
+  async function search(text, signal, { small = false } = {}) {
+    if (looksLikeBarcode(text)) return searchBarcode(text.replace(/\D/g, ''), signal, small);
+    return { results: await searchReleaseGroups(text, signal, small), hiddenNonVinyl: 0, hiddenSmall: 0 };
   }
 
   async function searchArtists(name) {
@@ -238,8 +259,8 @@
     }));
   }
 
-  // The artist's releases that match a search condition, minus bootlegs.
-  // vinyl is null when MusicBrainz didn't say what format a release is.
+  // The artist's releases that match a search condition, minus bootlegs. large is whether a release
+  // has an LP or 12" disc (null when MusicBrainz didn't say what format it is), small a 45 or 10".
   async function searchArtistReleases(artistId, condition, onProgress) {
     const query = `arid:"${artistId}" AND ${condition}`;
     const releases = [];
@@ -259,7 +280,8 @@
           id: release.id,
           groupId: group.id,
           date: release.date || '',
-          vinyl: formats.length ? formats.some((format) => VINYL_FORMAT_NAME.test(format)) : null,
+          large: formats.length ? formats.some((format) => LARGE_VINYL.test(format)) : null,
+          small: formats.some((format) => SMALL_VINYL.test(format)),
           edition: /\bdeluxe\b/i.test(words) ? 'Deluxe' : /\bexpanded\b/i.test(words) ? 'Expanded' : null,
         });
       }
@@ -271,8 +293,9 @@
 
   /*
    * Every album, EP and single credited to the artist, paged 100 at a time. Each one says whether
-   * the original has a vinyl pressing, and carries a `deluxe` entry when MusicBrainz has a deluxe
-   * or expanded edition filed under it. onProgress gets { step, loaded, total }.
+   * the original has an LP or 12" pressing (vinyl) and whether it has a 45 or 10" one (small), and
+   * carries a `deluxe` entry, with the same two flags, when MusicBrainz has a deluxe or expanded
+   * edition filed under it. onProgress gets { step, loaded, total }.
    */
   async function getDiscography(artistId, onProgress) {
     const report = (step) => (loaded, total) => onProgress && onProgress({ step, loaded, total });
@@ -294,12 +317,13 @@
       report('releases')(groups.length, total);
       if (!batch.length || groups.length >= total) break;
     }
-    const vinyl = await searchArtistReleases(artistId, `format:(${VINYL_FORMATS.join(' OR ')})`, report('vinyl'));
+    const vinyl = await searchArtistReleases(artistId, vinylQuery(true), report('vinyl'));
     const deluxe = await searchArtistReleases(artistId, '(release:(deluxe OR expanded) OR comment:(deluxe OR expanded))', report('deluxe'));
 
     const byId = new Map(groups.map((group) => [group.id, group]));
     for (const group of groups) {
       group.vinyl = false;
+      group.small = false;
       group.deluxe = null;
     }
     // A release is a deluxe version of an album when it says deluxe and the album's own title doesn't.
@@ -309,17 +333,20 @@
     };
     for (const release of vinyl.releases) {
       const group = byId.get(release.groupId);
-      // The search already asked for vinyl, so a release with no format listed still counts.
-      if (group && release.vinyl !== false && !deluxeOf(release)) group.vinyl = true;
+      if (!group || deluxeOf(release)) continue;
+      // The search already asked for vinyl, so a release with no format listed counts as an LP.
+      if (release.large !== false) group.vinyl = true;
+      if (release.small) group.small = true;
     }
     // Every deluxe or expanded release of an album folds into one entry, named "Deluxe" if any says so.
     for (const release of deluxe.releases) {
       const group = deluxeOf(release);
       if (!group) continue;
-      const entry = group.deluxe || (group.deluxe = { title: `${group.title} (Expanded Edition)`, date: '', vinyl: false, releaseIds: [] });
+      const entry = group.deluxe || (group.deluxe = { title: `${group.title} (Expanded Edition)`, date: '', vinyl: false, small: false, releaseIds: [] });
       entry.releaseIds.push(release.id);
       if (release.edition === 'Deluxe') entry.title = `${group.title} (Deluxe Edition)`;
-      if (release.vinyl) entry.vinyl = true;
+      if (release.large) entry.vinyl = true;
+      if (release.small) entry.small = true;
       if (release.date && (!entry.date || release.date < entry.date)) entry.date = release.date;
     }
 

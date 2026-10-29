@@ -103,6 +103,14 @@ function fakeMusicBrainz(url) {
       ],
     };
   }
+  if (url.pathname === '/ws/2/release' && query === 'barcode:5000000000045') {
+    return {
+      releases: [{
+        id: 'rel-creep-7', title: 'Creep', date: '1992-09-21', status: 'Official', 'artist-credit': credit('Radiohead', 'a-radiohead'),
+        'release-group': { id: 'rg-creep', 'primary-type': 'Single' }, media: [{ format: '7" Vinyl' }],
+      }],
+    };
+  }
   if (url.pathname === '/ws/2/release' && query === 'barcode:0724384260927') {
     return {
       releases: [{
@@ -119,7 +127,7 @@ function fakeMusicBrainz(url) {
         date: '2000-10-02',
         'artist-credit': credit('Radiohead', 'a-radiohead'),
         'release-group': { id: 'rg-kida', 'primary-type': 'Album' },
-        media: [{ format: '10" Vinyl' }, { format: '10" Vinyl' }],
+        media: [{ format: '12" Vinyl' }, { format: '12" Vinyl' }],
       }],
     };
   }
@@ -253,7 +261,7 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     await searchBox.fill('0 724352 775324');
     await searchBox.press('Enter');
     await page.locator('#search-results .result', { hasText: 'Kid A' }).waitFor();
-    assert.match(await text(page, '#search-results .result'), /2 x 10" Vinyl/);
+    assert.match(await text(page, '#search-results .result'), /2 x 12" Vinyl/);
     await page.locator('#search-results .result').getByRole('button', { name: 'Add' }).click();
     assert.equal(mbCalls.at(-1).searchParams.get('query'), 'barcode:0724352775324');
 
@@ -262,8 +270,22 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     await searchBox.press('Enter');
     await page.locator('#search-status', { hasText: 'That barcode is for a CD or cassette, not a vinyl record.' }).waitFor();
     assert.equal(await page.locator('#search-results .result').count(), 0);
-    assert.deepEqual(await page.locator('#add-format option').allTextContents(), ['LP', 'Double LP', 'EP', '7" single', '12" single', 'Box set', 'Other']);
-    assert.deepEqual(await page.locator('#filter-format option').allTextContents(), ['All formats', ...['LP', 'Double LP', 'EP', '7" single', '12" single', 'Box set', 'Other']]);
+    assert.deepEqual(await page.locator('#add-format option').allTextContents(), ['LP', 'Double LP', 'EP', '12" single', 'Box set', 'Other']);
+    assert.deepEqual(await page.locator('#filter-format option').allTextContents(), ['All formats', ...['LP', 'Double LP', 'EP', '12" single', 'Box set', 'Other']]);
+
+    // 45s and 10" records are off by default: a 45's barcode explains how to include them,
+    // and turning them on searches again and adds 45 and 10" to the format menus
+    await searchBox.fill('5000000000045');
+    await searchBox.press('Enter');
+    await page.locator('#search-status', { hasText: 'That barcode is for a 45 or a 10" record.' }).waitFor();
+    await page.check('#small-records');
+    await page.locator('#search-results .result', { hasText: 'Creep' }).waitFor();
+    assert.match(await text(page, '#search-results .result'), /7" Vinyl/);
+    assert.deepEqual(await page.locator('#add-format option').allTextContents(), ['LP', 'Double LP', 'EP', '45', '10"', '12" single', 'Box set', 'Other']);
+    await page.uncheck('#small-records');
+    await page.locator('#search-status', { hasText: 'That barcode is for a 45 or a 10" record.' }).waitFor();
+    assert.equal(await page.locator('#search-results .result').count(), 0);
+    assert.deepEqual(await page.locator('#add-format option').allTextContents(), ['LP', 'Double LP', 'EP', '12" single', 'Box set', 'Other']);
 
     // Manual entry keeps the artist filled in for the next one
     await page.click('#manual-add summary');
@@ -405,8 +427,18 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     assert.equal(await text(page, '#disco-progress-text'), 'You have 5 of 5');
     assert.match(await text(page, '#disco-owned'), /The Bends\n1995 · Album · You have: LP\nThe Bends \(Deluxe Edition\)\n2009 · Album · You have: LP/);
     assert.equal(await text(page, '#disco-missing-empty'), 'You have every one of these.');
+
+    // Creep only came out on 45, so with 45s and 10" records off it doesn't count as missing
+    assert.equal(await page.locator('.toggle', { hasText: 'Singles' }).count(), 0, 'no singles count yet');
+    await page.locator('.toggle', { hasText: 'Vinyl only' }).click();
     await page.locator('.toggle', { hasText: 'Singles' }).click();
+    assert.match(await text(page, '#disco-missing'), /Creep\n1992 · Single · Only on 45 or 10"/);
+    await page.locator('.toggle', { hasText: 'Vinyl only' }).click();
+    assert.equal(await text(page, '#disco-progress-text'), 'You have 5 of 5');
+    // Turning on 45s and 10" records here does the same as on the Add page
+    await page.locator('.toggle', { hasText: '45s and 10"' }).click();
     assert.equal(await text(page, '#disco-progress-text'), 'You have 5 of 6');
+    assert.ok(await page.locator('#small-records').isChecked(), 'the Add page checkbox follows');
 
     // Copy the missing list
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);

@@ -157,10 +157,28 @@
     return box;
   }
 
+  // 45s and 10" records are left out unless the person turns them on, on the Add page or in the discography.
+  const smallRecords = () => store.getPref('smallRecords', false);
+  const offeredFormats = () => S.FORMATS.filter((format) => smallRecords() || !S.SMALL_FORMATS.includes(format));
+
+  // Fills a format menu and keeps its current choice. Filter menus (the ones with an "any" option)
+  // also list formats already used in the collection, like an older CD, so those can still be found.
   function fillFormatSelect(select, anyLabel) {
-    const options = S.FORMATS.map((format) => h('option', { value: format }, format));
+    const previous = select.value;
+    let formats = offeredFormats();
+    if (anyLabel) formats = [...new Set([...formats, ...store.all().map((record) => record.format).filter(Boolean)])];
+    const options = formats.map((format) => h('option', { value: format }, format));
     if (anyLabel) options.unshift(h('option', { value: '' }, anyLabel));
     select.replaceChildren(...options);
+    if (formats.includes(previous)) select.value = previous;
+  }
+
+  function fillFormatSelects() {
+    fillFormatSelect($('#filter-format'), 'All formats');
+    fillFormatSelect($('#random-format'), 'Any format');
+    fillFormatSelect($('#add-format'));
+    fillFormatSelect($('#manual-form').elements.format);
+    fillFormatSelect($('#edit-form').elements.format);
   }
 
   function ensureOption(select, value) {
@@ -463,11 +481,12 @@
     // The previous results stay up until the new ones arrive, so the list doesn't flicker while typing.
     setStatus('#search-status', mb.looksLikeBarcode(text) ? 'Looking up that barcode…' : 'Searching…', 'busy');
     try {
-      const { results: found, hiddenNonVinyl } = await mb.search(text, controller.signal);
+      const { results: found, hiddenNonVinyl, hiddenSmall } = await mb.search(text, controller.signal, { small: smallRecords() });
       if (controller !== searchController) return;
       results = found;
       let note = '';
-      if (!found.length && hiddenNonVinyl) note = 'That barcode is for a CD or cassette, not a vinyl record.';
+      if (!found.length && hiddenSmall) note = 'That barcode is for a 45 or a 10" record. Turn on "Include 45s and 10" records" to add it.';
+      else if (!found.length && hiddenNonVinyl) note = 'That barcode is for a CD or cassette, not a vinyl record.';
       else if (!found.length) note = 'No vinyl records found. Try fewer words, check the spelling, or add it by hand below.';
       setStatus('#search-status', note);
       renderResults();
@@ -722,14 +741,20 @@
     const vinylOnly = store.getPref('vinylOnly', true);
     const { items, unmatched } = S.compareDiscography(disco.groups, store.all(), disco.artist);
 
-    // Records you own always count. With "Vinyl only" on, a missing one needs a vinyl pressing on MusicBrainz.
-    const eligible = items.filter((item) => !vinylOnly || item.records.length || item.vinyl);
+    // Records you own always count. With "Vinyl only" on, a missing one needs an LP or 12" pressing on
+    // MusicBrainz, or a 45 or 10" one when those are turned on.
+    const small = smallRecords();
+    const onVinyl = (item) => item.vinyl || (small && item.small);
+    const eligible = items.filter((item) => !vinylOnly || item.records.length || onVinyl(item));
     const countIn = (key) => eligible.filter((item) => S.categoryOf(item.group) === key).length;
 
     $('#disco-filters').replaceChildren(
       h('label', { class: 'toggle' },
         h('input', { type: 'checkbox', checked: vinylOnly, onchange: (e) => { store.setPref('vinylOnly', e.target.checked); renderDiscography(); } }),
         'Vinyl only'),
+      h('label', { class: 'toggle' },
+        h('input', { type: 'checkbox', checked: small, onchange: (e) => setSmallRecords(e.target.checked) }),
+        '45s and 10"'),
       h('span', { class: 'toggle-divider', 'aria-hidden': 'true' }),
       ...S.CATEGORIES.filter((category) => countIn(category.key)).map((category) => h('label', { class: 'toggle' },
         h('input', { type: 'checkbox', checked: enabled.has(category.key), onchange: (e) => toggleCategory(category.key, e.target.checked) }),
@@ -771,7 +796,7 @@
         itemCover(item),
         h('div', { class: 'result-text' },
           h('span', { class: 'record-title' }, item.title),
-          h('span', { class: 'record-meta' }, meta(mb.yearOf(item.date), typeLabel(item.group), !item.vinyl && 'No vinyl listed'))),
+          h('span', { class: 'record-meta' }, meta(mb.yearOf(item.date), typeLabel(item.group), !onVinyl(item) && (item.small ? 'Only on 45 or 10"' : 'No vinyl listed')))),
         h('div', { class: 'actions' },
           wish
             ? h('button', { type: 'button', class: 'small wished', onclick: () => unwishWithUndo(wish) }, 'On wishlist')
@@ -845,16 +870,28 @@
     }
   }
 
+  // Turns 45s and 10" records on or off everywhere: format menus, search and the discography.
+  function setSmallRecords(on) {
+    store.setPref('smallRecords', on);
+    $('#small-records').checked = on;
+    fillFormatSelects();
+    renderDiscography();
+    const text = searchText();
+    if (text && readyToSearch(text)) {
+      lastQuery = ''; // search again so the results match
+      runSearch(text);
+    }
+  }
+
   // ---------- Wire up ----------
 
-  fillFormatSelect($('#filter-format'), 'All formats');
-  fillFormatSelect($('#random-format'), 'Any format');
-  fillFormatSelect($('#add-format'));
-  fillFormatSelect($('#manual-form').elements.format);
-  fillFormatSelect($('#edit-form').elements.format);
+  fillFormatSelects();
+  const savedAddFormat = store.getPref('addFormat', 'LP');
+  if (offeredFormats().includes(savedAddFormat)) $('#add-format').value = savedAddFormat;
+  $('#small-records').checked = smallRecords();
+  $('#small-records').addEventListener('change', (e) => setSmallRecords(e.target.checked));
 
   $('#sort').value = store.getPref('sort', 'artist');
-  $('#add-format').value = store.getPref('addFormat', 'LP');
   $('#storage-warning').hidden = store.persistent;
 
   $('#filter-text').addEventListener('input', renderCollection);
@@ -892,6 +929,7 @@
   $('#disco-copy').addEventListener('click', copyMissing);
 
   store.onChange(() => {
+    fillFormatSelects();
     renderCollection();
     renderResults();
     renderDiscography();
