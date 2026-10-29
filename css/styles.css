@@ -158,7 +158,11 @@ a { color: var(--accent); }
   animation: logo-spin 1.8s linear infinite paused;
 }
 
-.brand:hover .logo-spin,
+/* Only on devices with a real pointer: phones keep a tapped link "hovered", which would leave it spinning. */
+@media (hover: hover) {
+  .brand:hover .logo-spin { animation-play-state: running; }
+}
+
 .brand:focus-visible .logo-spin { animation-play-state: running; }
 
 @keyframes logo-spin { to { transform: rotate(360deg); } }
