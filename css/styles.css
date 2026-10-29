@@ -31,6 +31,12 @@
   --heading-tracking: -0.015em;
   --album-strong: 70%;
   --album-soft: 35%;
+  --logo-light: #5a80ff;
+  --logo-mid: #1f4dff;
+  --logo-deep: #1336c9;
+  --logo-groove: #071a6b;
+  --logo-label: #f7f8fc;
+  --logo-print: #1f4dff;
   color-scheme: light;
 }
 
@@ -55,6 +61,11 @@
     --shadow: 0 1px 2px rgb(0 0 0 / 0.5);
     --album-strong: 55%;
     --album-soft: 25%;
+    --logo-light: #9cb5ff;
+    --logo-mid: #5b85ff;
+    --logo-deep: #3a5fe0;
+    --logo-groove: #06103d;
+    --logo-print: #3a64ff;
     color-scheme: dark;
   }
 }
@@ -132,13 +143,29 @@ a { color: var(--accent); }
   text-decoration: none;
 }
 
-.brand-disc {
+/* The blue record logo. Its colors are variables so it follows dark mode. */
+.logo {
   flex: none;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: radial-gradient(circle, var(--bg) 0 8%, var(--accent) 9% 34%, var(--vinyl) 35%);
+  width: 30px;
+  height: 30px;
 }
+
+/* On hover the record turns at 33 1/3 rpm (one turn every 1.8 seconds) while its reflections stay
+   still, like a real record. When the pointer leaves it stops where it is rather than snapping back. */
+.logo-spin {
+  transform-box: view-box;
+  transform-origin: 32px 32px;
+  animation: logo-spin 1.8s linear infinite paused;
+}
+
+/* Only on devices with a real pointer: phones keep a tapped link "hovered", which would leave it spinning. */
+@media (hover: hover) {
+  .brand:hover .logo-spin { animation-play-state: running; }
+}
+
+.brand:focus-visible .logo-spin { animation-play-state: running; }
+
+@keyframes logo-spin { to { transform: rotate(360deg); } }
 
 .tabs {
   display: flex;
@@ -343,6 +370,24 @@ button.small {
 }
 
 .add-as select { width: auto; }
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  font-size: 0.925rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.check input {
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  margin: 0;
+  accent-color: var(--accent);
+}
 .add-as .muted { font-weight: 400; }
 
 .form-grid {
@@ -920,6 +965,8 @@ dialog::backdrop { background: rgb(6 8 18 / 0.55); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important; /* otherwise looping animations flicker instead of stopping */
     transition-duration: 0.01ms !important;
   }
+  .logo-spin { animation: none !important; }
 }

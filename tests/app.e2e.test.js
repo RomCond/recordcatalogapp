@@ -78,18 +78,38 @@ function fakeMusicBrainz(url) {
     const groups = DISCOGRAPHIES[params.get('artist')] || [];
     return { 'release-group-count': groups.length, 'release-group-offset': 0, 'release-groups': groups };
   }
-  if (url.pathname === '/ws/2/release-group') {
-    return {
-      'release-groups': [
-        { ...rg('rg-okc', 'OK Computer', '1997-05-21'), 'artist-credit': credit('Radiohead', 'a-radiohead') },
-        { ...rg('rg-oknotok', 'OK Computer OKNOTOK 1997 2017', '2017-06-23', 'Album', ['Compilation']), 'artist-credit': credit('Radiohead', 'a-radiohead') },
-      ],
-    };
-  }
   if (url.pathname === '/ws/2/release' && query.startsWith('arid:')) {
     const artistId = /arid:"([^"]+)"/.exec(query)[1];
     const releases = (query.includes('format:') ? VINYL_RELEASES : DELUXE_RELEASES)[artistId] || [];
     return { count: releases.length, offset: 0, releases };
+  }
+  if (url.pathname === '/ws/2/release' && !query.startsWith('barcode:')) {
+    // Typed search: vinyl pressings, grouped into albums by the app. Two pressings of OK Computer
+    // show as one result; the CD and the bootleg are left out.
+    const pressing = (id, group, extra = {}) => ({
+      id, status: 'Official', score: 100, title: group.title, date: group.date,
+      'release-group': { id: group.id, title: group.title, 'primary-type': 'Album', 'secondary-types': group.secondary || [] },
+      'artist-credit': credit('Radiohead', 'a-radiohead'), media: [{ format: '12" Vinyl' }], ...extra,
+    });
+    const okc = { id: 'rg-okc', title: 'OK Computer', date: '1997-06-16' };
+    const oknotok = { id: 'rg-oknotok', title: 'OK Computer OKNOTOK 1997 2017', date: '2017-06-23', secondary: ['Compilation'] };
+    return {
+      releases: [
+        pressing('rel-okc-1', okc),
+        pressing('rel-okc-2', okc, { date: '2016-05-06' }),
+        pressing('rel-oknotok', oknotok, { score: 90, media: [{ format: '12" Vinyl' }, { format: '12" Vinyl' }, { format: '12" Vinyl' }] }),
+        pressing('rel-okc-cd', okc, { media: [{ format: 'CD' }] }),
+        pressing('rel-boot', { id: 'rg-boot', title: 'OK Computer Live', date: '1998' }, { status: 'Bootleg' }),
+      ],
+    };
+  }
+  if (url.pathname === '/ws/2/release' && query === 'barcode:5000000000045') {
+    return {
+      releases: [{
+        id: 'rel-creep-7', title: 'Creep', date: '1992-09-21', status: 'Official', 'artist-credit': credit('Radiohead', 'a-radiohead'),
+        'release-group': { id: 'rg-creep', 'primary-type': 'Single' }, media: [{ format: '7" Vinyl' }],
+      }],
+    };
   }
   if (url.pathname === '/ws/2/release' && query === 'barcode:0724384260927') {
     return {
@@ -107,7 +127,7 @@ function fakeMusicBrainz(url) {
         date: '2000-10-02',
         'artist-credit': credit('Radiohead', 'a-radiohead'),
         'release-group': { id: 'rg-kida', 'primary-type': 'Album' },
-        media: [{ format: '10" Vinyl' }, { format: '10" Vinyl' }],
+        media: [{ format: '12" Vinyl' }, { format: '12" Vinyl' }],
       }],
     };
   }
@@ -241,7 +261,7 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     await searchBox.fill('0 724352 775324');
     await searchBox.press('Enter');
     await page.locator('#search-results .result', { hasText: 'Kid A' }).waitFor();
-    assert.match(await text(page, '#search-results .result'), /2 x 10" Vinyl/);
+    assert.match(await text(page, '#search-results .result'), /2 x 12" Vinyl/);
     await page.locator('#search-results .result').getByRole('button', { name: 'Add' }).click();
     assert.equal(mbCalls.at(-1).searchParams.get('query'), 'barcode:0724352775324');
 
@@ -250,8 +270,22 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     await searchBox.press('Enter');
     await page.locator('#search-status', { hasText: 'That barcode is for a CD or cassette, not a vinyl record.' }).waitFor();
     assert.equal(await page.locator('#search-results .result').count(), 0);
-    assert.deepEqual(await page.locator('#add-format option').allTextContents(), ['LP', 'Double LP', 'EP', '7" single', '12" single', 'Box set', 'Other']);
-    assert.deepEqual(await page.locator('#filter-format option').allTextContents(), ['All formats', ...['LP', 'Double LP', 'EP', '7" single', '12" single', 'Box set', 'Other']]);
+    assert.deepEqual(await page.locator('#add-format option').allTextContents(), ['LP', 'Double LP', 'EP', '12" single', 'Box set', 'Other']);
+    assert.deepEqual(await page.locator('#filter-format option').allTextContents(), ['All formats', ...['LP', 'Double LP', 'EP', '12" single', 'Box set', 'Other']]);
+
+    // 45s and 10" records are off by default: a 45's barcode explains how to include them,
+    // and turning them on searches again and adds 45 and 10" to the format menus
+    await searchBox.fill('5000000000045');
+    await searchBox.press('Enter');
+    await page.locator('#search-status', { hasText: 'That barcode is for a 45 or a 10" record.' }).waitFor();
+    await page.check('#small-records');
+    await page.locator('#search-results .result', { hasText: 'Creep' }).waitFor();
+    assert.match(await text(page, '#search-results .result'), /7" Vinyl/);
+    assert.deepEqual(await page.locator('#add-format option').allTextContents(), ['LP', 'Double LP', 'EP', '45', '10"', '12" single', 'Box set', 'Other']);
+    await page.uncheck('#small-records');
+    await page.locator('#search-status', { hasText: 'That barcode is for a 45 or a 10" record.' }).waitFor();
+    assert.equal(await page.locator('#search-results .result').count(), 0);
+    assert.deepEqual(await page.locator('#add-format option').allTextContents(), ['LP', 'Double LP', 'EP', '12" single', 'Box set', 'Other']);
 
     // Manual entry keeps the artist filled in for the next one
     await page.click('#manual-add summary');
@@ -393,8 +427,18 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     assert.equal(await text(page, '#disco-progress-text'), 'You have 5 of 5');
     assert.match(await text(page, '#disco-owned'), /The Bends\n1995 · Album · You have: LP\nThe Bends \(Deluxe Edition\)\n2009 · Album · You have: LP/);
     assert.equal(await text(page, '#disco-missing-empty'), 'You have every one of these.');
+
+    // Creep only came out on 45, so with 45s and 10" records off it doesn't count as missing
+    assert.equal(await page.locator('.toggle', { hasText: 'Singles' }).count(), 0, 'no singles count yet');
+    await page.locator('.toggle', { hasText: 'Vinyl only' }).click();
     await page.locator('.toggle', { hasText: 'Singles' }).click();
+    assert.match(await text(page, '#disco-missing'), /Creep\n1992 · Single · Only on 45 or 10"/);
+    await page.locator('.toggle', { hasText: 'Vinyl only' }).click();
+    assert.equal(await text(page, '#disco-progress-text'), 'You have 5 of 5');
+    // Turning on 45s and 10" records here does the same as on the Add page
+    await page.locator('.toggle', { hasText: '45s and 10"' }).click();
     assert.equal(await text(page, '#disco-progress-text'), 'You have 5 of 6');
+    assert.ok(await page.locator('#small-records').isChecked(), 'the Add page checkbox follows');
 
     // Copy the missing list
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
@@ -472,9 +516,26 @@ test('uses Inter Tight and Inter, and follows the phone\'s light or dark setting
       assert.match(styles.body, /^"?Inter"?,/);
       assert.equal(styles.background, background, `${colorScheme} background`);
       assert.equal(await page.locator('#theme-btn, #look-dialog').count(), 0, 'there is no theme picker');
+
+      // The record logo uses the brighter blue in dark mode, and turns only while it's hovered
+      const vinylColor = await page.locator('#logo-vinyl stop').nth(1).evaluate((el) => getComputedStyle(el).stopColor);
+      assert.equal(vinylColor, colorScheme === 'dark' ? 'rgb(91, 133, 255)' : 'rgb(31, 77, 255)');
+      const spinState = () => page.locator('.logo-spin').evaluateAll((els) => els.map((el) => getComputedStyle(el).animationPlayState));
+      assert.deepEqual(await spinState(), ['paused', 'paused']);
+      await page.hover('.brand');
+      assert.deepEqual(await spinState(), ['running', 'running'], 'the record and its label turn together');
+      await page.mouse.move(500, 500);
+      assert.deepEqual(await spinState(), ['paused', 'paused']);
+
       assert.deepEqual(errors, []);
       await context.close();
     }
+
+    // With reduced motion on, the logo never turns
+    const { context, page } = await openApp(browser, { reducedMotion: 'reduce' });
+    await page.hover('.brand');
+    assert.deepEqual(await page.locator('.logo-spin').evaluateAll((els) => els.map((el) => getComputedStyle(el).animationName)), ['none', 'none']);
+    await context.close();
   } finally {
     await browser.close();
   }

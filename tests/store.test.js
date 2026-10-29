@@ -57,7 +57,18 @@ test('you can only add one copy of an album', () => {
 });
 
 test('only vinyl formats are offered', () => {
-  assert.deepEqual(S.FORMATS, ['LP', 'Double LP', 'EP', '7" single', '12" single', 'Box set', 'Other']);
+  assert.deepEqual(S.FORMATS, ['LP', 'Double LP', 'EP', '45', '10"', '12" single', 'Box set', 'Other']);
+  assert.deepEqual(S.SMALL_FORMATS, ['45', '10"']);
+});
+
+test('records saved as 7" singles are called 45s now', () => {
+  const storage = S.memoryStorage();
+  storage.setItem(S.KEYS.records, JSON.stringify([{ id: 'r1', artist: 'The Beatles', title: 'Help!', format: '7" single' }]));
+  storage.setItem(S.KEYS.wishlist, JSON.stringify([{ id: 'w1', artist: 'The Beatles', title: 'Ticket to Ride', format: '7" single' }]));
+  const store = S.createStore(storage);
+  assert.equal(store.get('r1').format, '45');
+  assert.equal(store.wishlist()[0].format, '45');
+  assert.equal(store.add({ artist: 'The Beatles', title: 'Day Tripper', format: '7" single' }).format, '45');
 });
 
 test('the wishlist holds records you want, apart from the collection', () => {
@@ -202,10 +213,10 @@ test('a record whose artist id belongs to someone else is not matched by name', 
   assert.deepEqual(items[0].records, []);
 });
 
-test('a 7" single goes to the single when an album shares its title', () => {
+test('a 45 goes to the single when an album shares its title', () => {
   const groups = [album('lp', 'Help!', '1965'), { id: 'sg', title: 'Help!', date: '1965', primaryType: 'Single', secondaryTypes: [] }];
   const records = [
-    { id: 'r1', artist: 'The Beatles', title: 'Help!', format: '7" single' },
+    { id: 'r1', artist: 'The Beatles', title: 'Help!', format: '45' },
     { id: 'r2', artist: 'Beatles', title: 'Help!', format: 'LP' },
   ];
   const { items } = S.compareDiscography(groups, records, { id: 'b', name: 'The Beatles' });
