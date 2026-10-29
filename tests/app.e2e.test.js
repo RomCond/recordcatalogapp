@@ -516,9 +516,26 @@ test('uses Inter Tight and Inter, and follows the phone\'s light or dark setting
       assert.match(styles.body, /^"?Inter"?,/);
       assert.equal(styles.background, background, `${colorScheme} background`);
       assert.equal(await page.locator('#theme-btn, #look-dialog').count(), 0, 'there is no theme picker');
+
+      // The record logo uses the brighter blue in dark mode, and turns only while it's hovered
+      const vinylColor = await page.locator('#logo-vinyl stop').nth(1).evaluate((el) => getComputedStyle(el).stopColor);
+      assert.equal(vinylColor, colorScheme === 'dark' ? 'rgb(91, 133, 255)' : 'rgb(31, 77, 255)');
+      const spinState = () => page.locator('.logo-spin').evaluateAll((els) => els.map((el) => getComputedStyle(el).animationPlayState));
+      assert.deepEqual(await spinState(), ['paused', 'paused']);
+      await page.hover('.brand');
+      assert.deepEqual(await spinState(), ['running', 'running'], 'the record and its label turn together');
+      await page.mouse.move(500, 500);
+      assert.deepEqual(await spinState(), ['paused', 'paused']);
+
       assert.deepEqual(errors, []);
       await context.close();
     }
+
+    // With reduced motion on, the logo never turns
+    const { context, page } = await openApp(browser, { reducedMotion: 'reduce' });
+    await page.hover('.brand');
+    assert.deepEqual(await page.locator('.logo-spin').evaluateAll((els) => els.map((el) => getComputedStyle(el).animationName)), ['none', 'none']);
+    await context.close();
   } finally {
     await browser.close();
   }
