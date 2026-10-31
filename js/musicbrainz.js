@@ -207,6 +207,7 @@
         releaseGroupId: album.group.id,
         releaseId: null,
         title: album.edition ? `${album.groupTitle} (${album.edition} Edition)` : album.groupTitle,
+        deluxe: Boolean(album.edition),
         artist: creditName(album.credit),
         artistId: mainArtistId(album.credit),
         year: yearOf(dateOf(album)),

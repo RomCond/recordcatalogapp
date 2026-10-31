@@ -574,6 +574,23 @@ button.wished {
   color: var(--accent);
 }
 
+/* "Vinyl not confirmed" and its Confirm button under a release: side by side when they fit */
+.vinyl-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 8px;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.vinyl-note .link {
+  min-height: 0;
+  margin-left: -2px;
+  padding: 4px 2px;
+  font-size: inherit;
+}
+
 .inline-link {
   justify-self: start;
   min-height: 32px;

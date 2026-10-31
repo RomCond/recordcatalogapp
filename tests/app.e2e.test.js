@@ -383,7 +383,7 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     assert.equal(await text(page, '#missing-heading'), 'Missing (3)');
     // One line per album, with no count of individual pressings
     assert.equal(await text(page, '#disco-missing'),
-      'Pablo Honey\n1993 · Album · Vinyl not confirmed\nWishlist\nGot it\n'
+      'Pablo Honey\n1993 · Album\nVinyl not confirmed\nConfirm\nWishlist\nGot it\n'
       + 'The Bends (Deluxe Edition)\n2009 · Album\nWishlist\nGot it\nAmnesiac\n2001 · Album\nWishlist\nGot it');
     assert.match(await text(page, '#disco-owned'), /^The Bends\n1995 · Album · You have: LP\nOK Computer/);
     assert.doesNotMatch(await text(page, '#disco-panel'), /Kid A \(Expanded/, 'a deluxe edition still needs confirmed vinyl');
@@ -395,7 +395,7 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     // Turning it off shows everything, including the CD-only expanded edition
     await page.locator('.toggle', { hasText: 'Vinyl only' }).click();
     assert.equal(await text(page, '#disco-progress-text'), 'You have 3 of 7');
-    assert.match(await text(page, '#disco-missing'), /Kid A \(Expanded Edition\)\n2016 · Album · Vinyl not confirmed/);
+    assert.match(await text(page, '#disco-missing'), /Kid A \(Expanded Edition\)\n2016 · Album\nVinyl not confirmed\nConfirm/);
     await page.locator('.toggle', { hasText: 'Vinyl only' }).click();
     assert.equal(await text(page, '#disco-progress-text'), 'You have 3 of 6');
 
@@ -434,7 +434,7 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     assert.equal(await page.locator('.toggle', { hasText: 'Singles' }).count(), 0, 'no singles count yet');
     await page.locator('.toggle', { hasText: 'Vinyl only' }).click();
     await page.locator('.toggle', { hasText: 'Singles' }).click();
-    assert.match(await text(page, '#disco-missing'), /Creep\n1992 · Single · Only on 45 or 10"/);
+    assert.match(await text(page, '#disco-missing'), /Creep\n1992 · Single\nOnly on 45 or 10"\nConfirm/);
     await page.locator('.toggle', { hasText: 'Vinyl only' }).click();
     assert.equal(await text(page, '#disco-progress-text'), 'You have 5 of 6');
     // Turning on 45s and 10" records here does the same as on the Add page
@@ -459,6 +459,17 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     await assertNoJunkText(page, 'wishlist');
     await shot(page, '07-wishlist');
     await openTab(page, 'discography');
+
+    // Confirming vinyl yourself: the CD-only expanded edition is hidden while Vinyl only is on,
+    // until you confirm it's out on vinyl. Undo hides it again.
+    await page.locator('.toggle', { hasText: 'Vinyl only' }).click();
+    await missingRow('Kid A (Expanded Edition)').getByRole('button', { name: 'Confirm' }).click();
+    assert.match(await text(page, '#disco-missing'), /Kid A \(Expanded Edition\)\n2016 · Album\nVinyl confirmed by you\nUndo/);
+    await page.locator('.toggle', { hasText: 'Vinyl only' }).click();
+    assert.equal(await text(page, '#disco-progress-text'), 'You have 5 of 8', 'it now counts as on vinyl');
+    await shot(page, '06b-confirmed-vinyl');
+    await missingRow('Kid A (Expanded Edition)').getByRole('button', { name: 'Undo' }).click();
+    assert.equal(await text(page, '#disco-progress-text'), 'You have 5 of 7');
 
     // Portishead has no id yet, so the app looks the name up once and remembers it
     const callsBefore = mbCalls.length;

@@ -73,6 +73,7 @@ test('search looks for vinyl pressings and studio albums by title or artist name
     releaseGroupId: 'rg1',
     releaseId: null,
     title: 'OK Computer',
+    deluxe: false,
     artist: 'Radiohead',
     artistId: 'a1',
     year: 1997,
