@@ -159,45 +159,60 @@
 
   /*
    * Free text matched against release titles and artist names, so any part of either works.
-   * Only vinyl pressings are searched (bootlegs left out), then grouped back into albums: each album
-   * or single shows once however many pressings match, and a deluxe or expanded edition gets its own
-   * line, like in the discography. So a single that never came out on vinyl doesn't show up at all.
-   * The year is the earliest matching vinyl pressing. 45s and 10" records count only when small is on.
+   * Searches vinyl pressings plus studio albums' releases (bootlegs left out), then groups them back
+   * into albums: each album or single shows once however many pressings match, and a deluxe or
+   * expanded edition gets its own line, like in the discography.
+   * Anything needs a vinyl pressing to show, except studio albums: MusicBrainz is often missing the
+   * vinyl pressings of albums that have them, so those show anyway with vinyl: false
+   * ("Vinyl not confirmed"). The year is the earliest vinyl pressing, or the earliest release when
+   * there's none. 45s and 10" records count only when small is on.
    */
   async function searchReleaseGroups(text, signal, small) {
     const words = ['release', 'artist'].map((name) => field(name, text, true)).join(' OR ');
-    const query = `(${words}) AND ${vinylQuery(small)}`;
+    const query = `(${words}) AND (${vinylQuery(small)} OR primarytype:album)`;
     const data = await get('release', { query, limit: 100 }, signal);
 
     const albums = new Map();
     for (const release of data.releases || []) {
       const group = release['release-group'] || {};
-      const formats = formatsOf(release);
       if (!group.id || SKIPPED_STATUSES.includes(release.status)) continue;
-      if (formats.length && !formats.some((format) => allowedVinyl(format, small))) continue;
+      const vinyl = formatsOf(release).some((format) => allowedVinyl(format, small));
+      const studio = group['primary-type'] === 'Album' && !(group['secondary-types'] || []).length;
 
       const groupTitle = group.title || release.title;
       const words = `${release.title || ''} ${release.disambiguation || ''}`;
       const edition = DELUXE_WORDS.test(words) && !DELUXE_WORDS.test(groupTitle) ? (/\bdeluxe\b/i.test(words) ? 'Deluxe' : 'Expanded') : null;
+      if (!vinyl && (edition || !studio)) continue;
+
       const key = edition ? `${group.id}:deluxe` : group.id;
-      const album = albums.get(key) || { group, groupTitle, edition, credit: release['artist-credit'], score: 0, date: '' };
+      const album = albums.get(key) || { group, groupTitle, edition, credit: release['artist-credit'], score: 0, vinyl: false, vinylDate: '', anyDate: '' };
       if (edition === 'Deluxe') album.edition = 'Deluxe';
       album.score = Math.max(album.score, release.score || 0);
-      if (release.date && (!album.date || release.date < album.date)) album.date = release.date;
+      const earlier = (date, than) => date && (!than || date < than);
+      if (earlier(release.date, album.anyDate)) album.anyDate = release.date;
+      if (vinyl) {
+        album.vinyl = true;
+        if (earlier(release.date, album.vinylDate)) album.vinylDate = release.date;
+      }
       albums.set(key, album);
     }
 
+    const dateOf = (album) => (album.vinyl ? album.vinylDate : album.anyDate) || '';
     return [...albums.values()]
-      .sort((a, b) => b.score - a.score || typeRank(a.group) - typeRank(b.group) || (a.date || '9999').localeCompare(b.date || '9999'))
+      .sort((a, b) => b.score - a.score
+        || Number(b.vinyl) - Number(a.vinyl)
+        || typeRank(a.group) - typeRank(b.group)
+        || (dateOf(a) || '9999').localeCompare(dateOf(b) || '9999'))
       .map((album) => ({
         releaseGroupId: album.group.id,
         releaseId: null,
         title: album.edition ? `${album.groupTitle} (${album.edition} Edition)` : album.groupTitle,
         artist: creditName(album.credit),
         artistId: mainArtistId(album.credit),
-        year: yearOf(album.date),
+        year: yearOf(dateOf(album)),
         primaryType: album.group['primary-type'] || null,
         secondaryTypes: album.group['secondary-types'] || [],
+        vinyl: album.vinyl,
         formatHint: null,
         media: '',
       }));
@@ -229,6 +244,7 @@
         year: yearOf(release.date),
         primaryType: group['primary-type'] || null,
         secondaryTypes: group['secondary-types'] || [],
+        vinyl: true,
         formatHint: formatFromMedia(media, group['primary-type']),
         media: mediaLabel(media),
       };

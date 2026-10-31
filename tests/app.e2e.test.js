@@ -376,14 +376,17 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     await page.locator('.artist-group', { hasText: 'Radiohead' }).getByRole('button', { name: 'Discography' }).click();
     await page.locator('#disco-panel').waitFor();
     assert.equal(await text(page, '#disco-name'), 'Radiohead');
-    // Vinyl only is on by default: Pablo Honey has no official vinyl, so it isn't listed as missing.
-    // The Bends has a deluxe edition on vinyl, which gets its own line right after the original.
-    assert.equal(await text(page, '#disco-progress-text'), 'You have 3 of 5');
-    assert.equal(await text(page, '#missing-heading'), 'Missing (2)');
+    // Vinyl only is on by default. Pablo Honey has no official vinyl in MusicBrainz, but it's a studio
+    // album, so it's listed anyway as "Vinyl not confirmed". The Bends has a deluxe edition on vinyl,
+    // which gets its own line right after the original.
+    assert.equal(await text(page, '#disco-progress-text'), 'You have 3 of 6');
+    assert.equal(await text(page, '#missing-heading'), 'Missing (3)');
     // One line per album, with no count of individual pressings
-    assert.equal(await text(page, '#disco-missing'), 'The Bends (Deluxe Edition)\n2009 · Album\nWishlist\nGot it\nAmnesiac\n2001 · Album\nWishlist\nGot it');
+    assert.equal(await text(page, '#disco-missing'),
+      'Pablo Honey\n1993 · Album · Vinyl not confirmed\nWishlist\nGot it\n'
+      + 'The Bends (Deluxe Edition)\n2009 · Album\nWishlist\nGot it\nAmnesiac\n2001 · Album\nWishlist\nGot it');
     assert.match(await text(page, '#disco-owned'), /^The Bends\n1995 · Album · You have: LP\nOK Computer/);
-    assert.doesNotMatch(await text(page, '#disco-panel'), /Pablo Honey|Kid A \(Expanded/);
+    assert.doesNotMatch(await text(page, '#disco-panel'), /Kid A \(Expanded/, 'a deluxe edition still needs confirmed vinyl');
     assert.equal(await page.locator('.toggle', { hasText: 'Live' }).count(), 0, 'a flexi-disc alone should not count as vinyl');
     assert.match(await text(page, '#disco-unmatched'), /Live at the Astoria/);
     await assertNoJunkText(page, 'discography');
@@ -392,10 +395,9 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     // Turning it off shows everything, including the CD-only expanded edition
     await page.locator('.toggle', { hasText: 'Vinyl only' }).click();
     assert.equal(await text(page, '#disco-progress-text'), 'You have 3 of 7');
-    assert.match(await text(page, '#disco-missing'), /Pablo Honey\n1993 · Album · No vinyl listed/);
-    assert.match(await text(page, '#disco-missing'), /Kid A \(Expanded Edition\)\n2016 · Album · No vinyl listed/);
+    assert.match(await text(page, '#disco-missing'), /Kid A \(Expanded Edition\)\n2016 · Album · Vinyl not confirmed/);
     await page.locator('.toggle', { hasText: 'Vinyl only' }).click();
-    assert.equal(await text(page, '#disco-progress-text'), 'You have 3 of 5');
+    assert.equal(await text(page, '#disco-progress-text'), 'You have 3 of 6');
 
     // Wishlist from the discography: the button flips to "On wishlist", and tapping that takes it off again
     const missingRow = (title) => page.locator('#disco-missing .result', { hasText: title });
@@ -407,11 +409,11 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     assert.equal(await wishCount(), '1');
     await missingRow('Amnesiac').getByRole('button', { name: 'Wishlist', exact: true }).click();
     assert.equal(await wishCount(), '2');
-    assert.equal(await text(page, '#disco-progress-text'), 'You have 3 of 5', 'wishlisted records still count as missing');
+    assert.equal(await text(page, '#disco-progress-text'), 'You have 3 of 6', 'wishlisted records still count as missing');
 
     // Getting a wishlisted record takes it off the wishlist
     await missingRow('Amnesiac').getByRole('button', { name: 'Got it' }).click();
-    assert.equal(await text(page, '#disco-progress-text'), 'You have 4 of 5');
+    assert.equal(await text(page, '#disco-progress-text'), 'You have 4 of 6');
     assert.equal(await wishCount(), '1');
 
     // The wishlist lives in the Collection tab. Getting the deluxe edition from there ticks off
@@ -424,9 +426,9 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     await page.locator('#wishlist-empty').waitFor();
     assert.equal(await text(page, '#nav-count'), '7');
     await openTab(page, 'discography');
-    assert.equal(await text(page, '#disco-progress-text'), 'You have 5 of 5');
+    assert.equal(await text(page, '#disco-progress-text'), 'You have 5 of 6');
     assert.match(await text(page, '#disco-owned'), /The Bends\n1995 · Album · You have: LP\nThe Bends \(Deluxe Edition\)\n2009 · Album · You have: LP/);
-    assert.equal(await text(page, '#disco-missing-empty'), 'You have every one of these.');
+    assert.equal(await text(page, '#missing-heading'), 'Missing (1)', 'only Pablo Honey is left');
 
     // Creep only came out on 45, so with 45s and 10" records off it doesn't count as missing
     assert.equal(await page.locator('.toggle', { hasText: 'Singles' }).count(), 0, 'no singles count yet');
@@ -434,17 +436,17 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     await page.locator('.toggle', { hasText: 'Singles' }).click();
     assert.match(await text(page, '#disco-missing'), /Creep\n1992 · Single · Only on 45 or 10"/);
     await page.locator('.toggle', { hasText: 'Vinyl only' }).click();
-    assert.equal(await text(page, '#disco-progress-text'), 'You have 5 of 5');
+    assert.equal(await text(page, '#disco-progress-text'), 'You have 5 of 6');
     // Turning on 45s and 10" records here does the same as on the Add page
     await page.locator('.toggle', { hasText: '45s and 10"' }).click();
-    assert.equal(await text(page, '#disco-progress-text'), 'You have 5 of 6');
+    assert.equal(await text(page, '#disco-progress-text'), 'You have 5 of 7');
     assert.ok(await page.locator('#small-records').isChecked(), 'the Add page checkbox follows');
 
     // Copy the missing list
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.click('#disco-copy');
-    await page.locator('#toast.show', { hasText: 'Copied 1 title' }).waitFor();
-    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'Radiohead - Creep (1992)');
+    await page.locator('#toast.show', { hasText: 'Copied 2 titles' }).waitFor();
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'Radiohead - Creep (1992)\nRadiohead - Pablo Honey (1993)');
 
     // Remove from the wishlist, then undo
     await missingRow('Creep').getByRole('button', { name: 'Wishlist', exact: true }).click();
@@ -478,7 +480,7 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     assert.equal(await text(page, '#nav-count'), '7');
     await page.goto(`${PAGE_URL}#discography`);
     await page.selectOption('#disco-artist', { label: 'Radiohead (6)' });
-    assert.equal(await text(page, '#disco-progress-text'), 'You have 5 of 6');
+    assert.equal(await text(page, '#disco-progress-text'), 'You have 5 of 7');
 
     // Backup, wipe, restore
     await openTab(page, 'collection');

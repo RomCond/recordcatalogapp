@@ -502,7 +502,7 @@
       cover(result, 'sm'),
       h('div', { class: 'result-text' },
         h('span', { class: 'record-title' }, result.title),
-        h('span', { class: 'record-meta' }, meta(result.artist, result.year, typeLabel(result), result.media, store.findWish(result) && 'On your wishlist'))),
+        h('span', { class: 'record-meta' }, meta(result.artist, result.year, typeLabel(result), result.media, result.vinyl === false && 'Vinyl not confirmed', store.findWish(result) && 'On your wishlist'))),
       store.findCopy(result)
         ? h('button', { type: 'button', disabled: true }, 'In collection')
         : h('button', { type: 'button', class: 'primary', onclick: () => addFromResult(result) }, 'Add'))));
@@ -742,10 +742,13 @@
     const { items, unmatched } = S.compareDiscography(disco.groups, store.all(), disco.artist);
 
     // Records you own always count. With "Vinyl only" on, a missing one needs an LP or 12" pressing on
-    // MusicBrainz, or a 45 or 10" one when those are turned on.
+    // MusicBrainz, or a 45 or 10" one when those are turned on. Studio albums are the exception: they
+    // show even without one, marked "Vinyl not confirmed", because MusicBrainz is often missing the
+    // vinyl pressings of albums that have them. Deluxe editions still need one (many are digital only).
     const small = smallRecords();
     const onVinyl = (item) => item.vinyl || (small && item.small);
-    const eligible = items.filter((item) => !vinylOnly || item.records.length || onVinyl(item));
+    const studioAlbum = (item) => item.edition === 'standard' && S.categoryOf(item.group) === 'album';
+    const eligible = items.filter((item) => !vinylOnly || item.records.length || onVinyl(item) || studioAlbum(item));
     const countIn = (key) => eligible.filter((item) => S.categoryOf(item.group) === key).length;
 
     $('#disco-filters').replaceChildren(
@@ -796,7 +799,7 @@
         itemCover(item),
         h('div', { class: 'result-text' },
           h('span', { class: 'record-title' }, item.title),
-          h('span', { class: 'record-meta' }, meta(mb.yearOf(item.date), typeLabel(item.group), !onVinyl(item) && (item.small ? 'Only on 45 or 10"' : 'No vinyl listed')))),
+          h('span', { class: 'record-meta' }, meta(mb.yearOf(item.date), typeLabel(item.group), !onVinyl(item) && (item.small ? 'Only on 45 or 10"' : 'Vinyl not confirmed')))),
         h('div', { class: 'actions' },
           wish
             ? h('button', { type: 'button', class: 'small wished', onclick: () => unwishWithUndo(wish) }, 'On wishlist')

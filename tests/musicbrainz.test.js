@@ -55,7 +55,7 @@ const pressing = (id, group, { title = group.title, note = '', status = 'Officia
   media: formats.map((format) => ({ format })),
 });
 
-test('search looks for vinyl pressings by title or artist name, and maps results', async (t) => {
+test('search looks for vinyl pressings and studio albums by title or artist name, and maps results', async (t) => {
   const calls = [];
   const okc = { id: 'rg1', title: 'OK Computer', type: 'Album' };
   t.mock.method(globalThis, 'fetch', async (url) => {
@@ -68,7 +68,7 @@ test('search looks for vinyl pressings by title or artist name, and maps results
   assert.equal(calls[0].searchParams.get('query'),
     '((release:"radiohead ok comp"^3 OR release:(radiohead ok comp comp*))'
     + ' OR (artist:"radiohead ok comp"^3 OR artist:(radiohead ok comp comp*)))'
-    + ' AND format:(vinyl OR 12vinyl)', 'LPs and 12" records only, by default');
+    + ' AND (format:(vinyl OR 12vinyl) OR primarytype:album)', 'LPs and 12" records (by default), plus studio albums');
   assert.deepEqual(results[0], {
     releaseGroupId: 'rg1',
     releaseId: null,
@@ -78,6 +78,7 @@ test('search looks for vinyl pressings by title or artist name, and maps results
     year: 1997,
     primaryType: 'Album',
     secondaryTypes: [],
+    vinyl: true,
     formatHint: null,
     media: '',
   });
@@ -88,6 +89,8 @@ test('search shows each vinyl album or single once, and leaves out what never ca
   const creep = { id: 'creep', title: 'Creep', type: 'Single' };
   const sampler = { id: 'sampler', title: 'Promo Sampler', type: 'EP' };
   const bends = { id: 'bends', title: 'The Bends', type: 'Album' };
+  const pablo = { id: 'pablo', title: 'Pablo Honey', type: 'Album' };
+  const live = { id: 'live', title: 'I Might Be Wrong', type: 'Album', secondary: ['Live'] };
   t.mock.method(globalThis, 'fetch', async () => jsonResponse({
     releases: [
       pressing('r1', okc, { date: '2008-08-19', score: 90 }),
@@ -97,13 +100,19 @@ test('search shows each vinyl album or single once, and leaves out what never ca
       pressing('r5', sampler, { status: 'Bootleg' }), // bootleg vinyl doesn't count
       pressing('r6', bends, { note: 'collector’s deluxe edition', date: '2009-03-24', score: 80 }),
       pressing('r7', bends, { date: '1995-03-13', score: 70 }),
+      // Pablo Honey is a studio album with no vinyl in MusicBrainz: it still shows, unconfirmed,
+      // dated by its earliest release. Its digital-only deluxe edition doesn't.
+      pressing('r8', pablo, { date: '1993-02-22', formats: ['CD'], score: 60 }),
+      pressing('r9', pablo, { date: '2009-08-31', formats: ['Digital Media'], note: 'deluxe edition', score: 60 }),
+      pressing('r10', live, { formats: ['CD'], score: 60 }), // a live album without vinyl doesn't show
     ],
   }));
   const { results } = await mb.search('radiohead');
-  assert.deepEqual(results.map((r) => [r.title, r.year]), [
-    ['OK Computer', 1997],
-    ['The Bends (Deluxe Edition)', 2009],
-    ['The Bends', 1995],
+  assert.deepEqual(results.map((r) => [r.title, r.year, r.vinyl]), [
+    ['OK Computer', 1997, true],
+    ['The Bends (Deluxe Edition)', 2009, true],
+    ['The Bends', 1995, true],
+    ['Pablo Honey', 1993, false],
   ], 'Creep only came out on 45, so it is left out');
 
   // With 45s and 10" records turned on, the search asks for them and Creep shows up
@@ -114,8 +123,8 @@ test('search shows each vinyl album or single once, and leaves out what never ca
     return fetchMock(url);
   });
   const withSmall = await mb.search('radiohead', undefined, { small: true });
-  assert.match(calls[0].searchParams.get('query'), /AND format:\(vinyl OR 12vinyl OR 7vinyl OR 10vinyl\)$/);
-  assert.deepEqual(withSmall.results.map((r) => r.title), ['OK Computer', 'Creep', 'The Bends (Deluxe Edition)', 'The Bends']);
+  assert.match(calls[0].searchParams.get('query'), /AND \(format:\(vinyl OR 12vinyl OR 7vinyl OR 10vinyl\) OR primarytype:album\)$/);
+  assert.deepEqual(withSmall.results.map((r) => r.title), ['OK Computer', 'Creep', 'The Bends (Deluxe Edition)', 'The Bends', 'Pablo Honey']);
 });
 
 test('equal scores put plain albums first, then EPs and singles, oldest first', async (t) => {
