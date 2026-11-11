@@ -249,6 +249,25 @@
     return record;
   }
 
+  // Under a release MusicBrainz lists no vinyl pressing for: "Vinyl not confirmed" with a Confirm
+  // button, or "Vinyl confirmed by you" with Undo once you have. Nothing when you own it on vinyl.
+  function vinylNote(key, title, label = 'Vinyl not confirmed') {
+    if (!key) return null;
+    if (store.confirmedByYou(key)) {
+      return h('span', { class: 'vinyl-note' }, h('span', {}, 'Vinyl confirmed by you'),
+        h('button', { type: 'button', class: 'link small', onclick: () => setVinylConfirmed(key, title, false) }, 'Undo'));
+    }
+    if (store.isVinylConfirmed(key)) return null;
+    return h('span', { class: 'vinyl-note' }, h('span', {}, label),
+      h('button', { type: 'button', class: 'link small', onclick: () => setVinylConfirmed(key, title, true) }, 'Confirm'));
+  }
+
+  function setVinylConfirmed(key, title, on) {
+    const change = (yes) => (yes ? store.confirmVinyl(key) : store.unconfirmVinyl(key));
+    change(on);
+    toast(on ? `Confirmed ${title} on vinyl` : `Removed your vinyl confirmation for ${title}`, { label: 'Undo', run: () => change(!on) });
+  }
+
   function wishWithUndo(input) {
     let wish;
     try {
@@ -502,7 +521,8 @@
       cover(result, 'sm'),
       h('div', { class: 'result-text' },
         h('span', { class: 'record-title' }, result.title),
-        h('span', { class: 'record-meta' }, meta(result.artist, result.year, typeLabel(result), result.media, store.findWish(result) && 'On your wishlist'))),
+        h('span', { class: 'record-meta' }, meta(result.artist, result.year, typeLabel(result), result.media, store.findWish(result) && 'On your wishlist')),
+        result.vinyl === false ? vinylNote(S.vinylKey(result.releaseGroupId, result.deluxe), result.title) : null),
       store.findCopy(result)
         ? h('button', { type: 'button', disabled: true }, 'In collection')
         : h('button', { type: 'button', class: 'primary', onclick: () => addFromResult(result) }, 'Add'))));
@@ -742,10 +762,15 @@
     const { items, unmatched } = S.compareDiscography(disco.groups, store.all(), disco.artist);
 
     // Records you own always count. With "Vinyl only" on, a missing one needs an LP or 12" pressing on
-    // MusicBrainz, or a 45 or 10" one when those are turned on.
+    // MusicBrainz, or a 45 or 10" one when those are turned on. Studio albums are the exception: they
+    // show even without one, marked "Vinyl not confirmed", because MusicBrainz is often missing the
+    // vinyl pressings of albums that have them. Deluxe editions still need one (many are digital only).
+    // A release you've confirmed, or own on vinyl, counts as having one.
     const small = smallRecords();
-    const onVinyl = (item) => item.vinyl || (small && item.small);
-    const eligible = items.filter((item) => !vinylOnly || item.records.length || onVinyl(item));
+    const listedOnVinyl = (item) => item.vinyl || (small && item.small);
+    const onVinyl = (item) => listedOnVinyl(item) || store.isVinylConfirmed(item.key);
+    const studioAlbum = (item) => item.edition === 'standard' && S.categoryOf(item.group) === 'album';
+    const eligible = items.filter((item) => !vinylOnly || item.records.length || onVinyl(item) || studioAlbum(item));
     const countIn = (key) => eligible.filter((item) => S.categoryOf(item.group) === key).length;
 
     $('#disco-filters').replaceChildren(
@@ -796,7 +821,8 @@
         itemCover(item),
         h('div', { class: 'result-text' },
           h('span', { class: 'record-title' }, item.title),
-          h('span', { class: 'record-meta' }, meta(mb.yearOf(item.date), typeLabel(item.group), !onVinyl(item) && (item.small ? 'Only on 45 or 10"' : 'No vinyl listed')))),
+          h('span', { class: 'record-meta' }, meta(mb.yearOf(item.date), typeLabel(item.group))),
+          listedOnVinyl(item) ? null : vinylNote(item.key, item.title, item.small ? 'Only on 45 or 10"' : 'Vinyl not confirmed')),
         h('div', { class: 'actions' },
           wish
             ? h('button', { type: 'button', class: 'small wished', onclick: () => unwishWithUndo(wish) }, 'On wishlist')

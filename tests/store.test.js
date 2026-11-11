@@ -95,6 +95,41 @@ test('the wishlist holds records you want, apart from the collection', () => {
   assert.equal(store.removeFromWishlist('gone'), null);
 });
 
+test('you can confirm a release came out on vinyl, and owning it on vinyl confirms it too', () => {
+  const storage = S.memoryStorage();
+  const store = S.createStore(storage);
+  assert.equal(S.vinylKey('gone-now', false), 'gone-now');
+  assert.equal(S.vinylKey('gone-now', true), 'gone-now:deluxe');
+  assert.equal(S.vinylKey(null, false), null);
+
+  assert.equal(store.isVinylConfirmed('gone-now'), false);
+  store.confirmVinyl('gone-now');
+  assert.equal(store.isVinylConfirmed('gone-now'), true);
+  assert.equal(store.confirmedByYou('gone-now'), true);
+  assert.equal(store.isVinylConfirmed('gone-now:deluxe'), false, 'the deluxe edition is confirmed separately');
+  assert.equal(S.createStore(storage).isVinylConfirmed('gone-now'), true, 'confirmations are saved');
+  store.unconfirmVinyl('gone-now');
+  assert.equal(store.isVinylConfirmed('gone-now'), false);
+
+  // Owning it on vinyl counts, edition by edition; a record of format "Other" doesn't
+  store.add({ artist: 'Bleachers', title: 'Strange Desire', releaseGroupId: 'strange', format: 'LP' });
+  store.add({ artist: 'Bleachers', title: 'Bleachers (Deluxe Edition)', releaseGroupId: 'bleachers', format: 'Double LP' });
+  store.add({ artist: 'Bleachers', title: 'Terrible Thrills', releaseGroupId: 'thrills', format: 'Other' });
+  assert.equal(store.isVinylConfirmed('strange'), true);
+  assert.equal(store.confirmedByYou('strange'), false, 'not something you confirmed by hand');
+  assert.equal(store.isVinylConfirmed('bleachers:deluxe'), true);
+  assert.equal(store.isVinylConfirmed('bleachers'), false);
+  assert.equal(store.isVinylConfirmed('thrills'), false);
+});
+
+test('backups carry vinyl confirmations', () => {
+  const source = S.createStore(S.memoryStorage());
+  source.confirmVinyl('gone-now');
+  const target = S.createStore(S.memoryStorage());
+  target.importJSON(source.exportJSON());
+  assert.equal(target.confirmedByYou('gone-now'), true);
+});
+
 test('backups carry the wishlist too', () => {
   const source = S.createStore(S.memoryStorage());
   source.add({ artist: 'Weezer', title: 'Weezer', releaseGroupId: 'blue' });

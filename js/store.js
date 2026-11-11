@@ -12,6 +12,7 @@
   const KEYS = {
     records: 'recordcatalog.records.v1',
     wishlist: 'recordcatalog.wishlist.v1',
+    confirmed: 'recordcatalog.confirmed.v1', // releases you've confirmed came out on vinyl
     discographies: 'recordcatalog.discographies.v5', // v5: LP and 45/10" pressings tracked separately
     prefs: 'recordcatalog.prefs.v1',
   };
@@ -21,6 +22,8 @@
   const FORMATS = ['LP', 'Double LP', 'EP', '45', '10"', '12" single', 'Box set', 'Other'];
   // 45s (7") and 10" records are only offered when the person turns them on.
   const SMALL_FORMATS = ['45', '10"'];
+  // Owning a record in one of these formats shows its release came out on vinyl ("Other" might not be vinyl).
+  const VINYL_RECORD_FORMATS = FORMATS.filter((format) => format !== 'Other');
 
   // Formats renamed since earlier versions, fixed up when records are read.
   const RENAMED_FORMATS = { '7" single': '45' };
@@ -136,6 +139,12 @@
   // Deluxe and expanded editions add songs, so they get their own line next to the original.
   // musicbrainz.js uses the same words to find them.
   const DELUXE_WORDS = /\b(deluxe|expanded)\b/i;
+
+  // What a vinyl confirmation is about: a release group, plus ":deluxe" for its deluxe edition.
+  // Matches the keys of compareDiscography's lines.
+  function vinylKey(releaseGroupId, deluxe) {
+    return releaseGroupId ? `${releaseGroupId}${deluxe ? ':deluxe' : ''}` : null;
+  }
 
   // You keep one copy of each album: the same release group, or the same artist and title when
   // either was typed in by hand, in the same edition (the original and its deluxe are different albums).
@@ -262,6 +271,7 @@
     const withCurrentFormat = (record) => (RENAMED_FORMATS[record.format] ? { ...record, format: currentFormat(record.format) } : record);
     let records = loadList(KEYS.records).map(withCurrentFormat);
     let wishes = loadList(KEYS.wishlist).map(withCurrentFormat);
+    const confirmed = new Set(read(KEYS.confirmed, []).filter((key) => typeof key === 'string'));
     for (const key of OLD_KEYS) {
       try {
         backend.removeItem(key);
@@ -271,6 +281,7 @@
     function commit() {
       write(KEYS.records, records);
       write(KEYS.wishlist, wishes);
+      write(KEYS.confirmed, [...confirmed]);
       listeners.forEach((listener) => listener());
     }
 
@@ -325,6 +336,28 @@
         return wish;
       },
 
+      // ----- Vinyl confirmations: releases MusicBrainz lists no vinyl pressing for, but you know have one -----
+
+      // Whether you've confirmed it, or own it in a vinyl format.
+      isVinylConfirmed(key) {
+        if (!key) return false;
+        if (confirmed.has(key)) return true;
+        return records.some((record) => VINYL_RECORD_FORMATS.includes(record.format)
+          && vinylKey(record.releaseGroupId, DELUXE_WORDS.test(record.title)) === key);
+      },
+
+      confirmedByYou: (key) => confirmed.has(key),
+
+      confirmVinyl(key) {
+        if (!key || confirmed.has(key)) return;
+        confirmed.add(key);
+        commit();
+      },
+
+      unconfirmVinyl(key) {
+        if (confirmed.delete(key)) commit();
+      },
+
       removeFromWishlist(id) {
         const wish = wishes.find((w) => w.id === id) || null;
         if (!wish) return null;
@@ -367,7 +400,9 @@
       },
 
       exportJSON() {
-        return JSON.stringify({ app: 'recordcatalog', version: 2, exportedAt: new Date().toISOString(), records, wishlist: wishes }, null, 2);
+        return JSON.stringify({
+          app: 'recordcatalog', version: 3, exportedAt: new Date().toISOString(), records, wishlist: wishes, vinylConfirmed: [...confirmed],
+        }, null, 2);
       },
 
       // Merges a backup in. Albums you already have, or already want, are skipped.
@@ -407,7 +442,9 @@
         const fromRecords = merge(list, records);
         const fromWishlist = merge(Array.isArray(data.wishlist) ? data.wishlist : [], wishes, records);
         dropWishesYouOwn();
-        if (fromRecords.count || fromWishlist.count) commit();
+        const confirmedBefore = confirmed.size;
+        for (const key of Array.isArray(data.vinylConfirmed) ? data.vinylConfirmed : []) if (typeof key === 'string') confirmed.add(key);
+        if (fromRecords.count || fromWishlist.count || confirmed.size > confirmedBefore) commit();
         return { added: fromRecords.count, skipped: fromRecords.skipped, wishes: fromWishlist.count };
       },
 
@@ -467,6 +504,7 @@
     collectionArtists,
     sameArtist,
     sameAlbum,
+    vinylKey,
     categoryOf,
     compareDiscography,
     pickRandom,
