@@ -341,6 +341,8 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     // Edit, delete, undo
     await page.locator('.record', { hasText: 'Dummy' }).click();
     assert.ok(await page.locator('#edit-dialog').isVisible());
+    const focused = () => page.evaluate(() => document.activeElement.id || document.activeElement.tagName);
+    assert.equal(await focused(), 'edit-heading', 'no text box is focused, so no cursor or phone keyboard pops up');
     await page.selectOption('#edit-form [name=format]', 'Box set');
     await page.fill('#edit-form [name=notes]', 'Found at a yard sale');
     await shot(page, '04-edit');
@@ -545,6 +547,7 @@ test('imports a typed list and looks the records up', { skip: !chromium && 'play
     const byTitle = async () => Object.fromEntries((await records()).map((r) => [r.title, r]));
 
     await page.click('#list-import-tools');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'list-heading', 'the list box waits for a tap');
     await page.fill('#list-form [name=list]', [
       'Radiohead - The Bends',
       'Portishead - Dumy (Signed)',

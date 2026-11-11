@@ -989,6 +989,10 @@ dialog {
 
 dialog::backdrop { background: rgb(6 8 18 / 0.55); }
 
+/* A dialog opens with its heading focused, not its first text box, so the cursor (and a phone's
+   keyboard) only shows up once you tap a box. The heading needs no focus ring. */
+dialog h2[tabindex="-1"]:focus { outline: none; }
+
 .edit-form { padding: 18px; }
 
 .edit-head {

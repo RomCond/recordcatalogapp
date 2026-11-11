@@ -182,7 +182,7 @@
     <form method="dialog" id="edit-form" class="edit-form">
       <div class="edit-head">
         <div id="edit-cover"></div>
-        <h2 id="edit-heading">Edit record</h2>
+        <h2 id="edit-heading" tabindex="-1" autofocus>Edit record</h2>
       </div>
       <div class="form-grid">
         <label class="field span-2"><span>Artist</span><input name="artist" required autocomplete="off"></label>
@@ -203,7 +203,7 @@
 
   <dialog id="list-dialog" aria-labelledby="list-heading">
     <form method="dialog" id="list-form" class="edit-form">
-      <h2 id="list-heading">Import a list</h2>
+      <h2 id="list-heading" tabindex="-1" autofocus>Import a list</h2>
       <p class="muted small list-help">Paste your list or choose a text file, one record per line with the artist, a dash, then the title: <q>Steely Dan - Aja</q>. Anything in brackets at the end, like <q>(Signed)</q>, is kept as a note, and <q>(45)</q> or <q>(Single)</q> makes it a 45. Covers, years and spellings are looked up after.</p>
       <label class="field"><span>Your list</span><textarea name="list" rows="9" spellcheck="false" autocomplete="off" placeholder="Steely Dan - Aja&#10;Rush - Moving Pictures (Signed)&#10;Weezer - Pinkerton (Deluxe)"></textarea></label>
       <div class="list-options">
