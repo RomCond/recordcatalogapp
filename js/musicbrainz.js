@@ -14,7 +14,11 @@
   const COVERS = 'https://coverartarchive.org/release-group/';
   const MIN_GAP_MS = 1100;
   const MAX_DISCOGRAPHY_PAGES = 15;
-  const MAX_RELEASE_PAGES = 30;
+  const MAX_RELEASE_PAGES = 40;
+  // MusicBrainz search hands back at most this many results for one query, however it's paged.
+  const SEARCH_RESULT_LIMIT = 500;
+  // Release years are searched from here on; earlier dates (there's no vinyl that old) still count.
+  const FIRST_YEAR = 1900;
 
   // The vinyl formats that count. Flexi-disc and VinylDisc (a CD/vinyl hybrid) don't. LPs and 12"
   // records always count; 45s (7") and 10" records are "small" and count only when turned on.
@@ -316,22 +320,36 @@
 
   // The artist's releases that match a search condition, minus bootlegs. large is whether a release
   // has an LP or 12" disc (null when MusicBrainz didn't say what format it is), small a 45 or 10".
+  /*
+   * MusicBrainz search returns at most 500 results for a query, and big artists have more vinyl
+   * pressings than that (David Bowie about 525, the Beatles about 1,500). So a search with more is
+   * split by release year, halving the range until each part fits, plus a part for releases with no
+   * date. complete is false if some were still left out: a single year with more than 500, or more
+   * pages than MAX_RELEASE_PAGES.
+   */
   async function searchArtistReleases(artistId, condition, onProgress) {
-    const query = `arid:"${artistId}" AND ${condition}`;
-    const releases = [];
-    let seen = 0;
-    let total = 0;
-    for (let page = 0; page < MAX_RELEASE_PAGES; page++) {
-      const data = await get('release', { query, limit: 100, offset: seen });
-      total = data.count || 0;
-      const batch = data.releases || [];
-      seen += batch.length;
-      for (const release of batch) {
+    const base = `arid:"${artistId}" AND ${condition}`;
+    const lastYear = new Date().getFullYear() + 1;
+    const releases = new Map();
+    const seen = new Set();
+    let total = null;
+    let pages = 0;
+    let complete = true;
+
+    async function page(query, offset) {
+      pages += 1;
+      const data = await get('release', { query, limit: 100, offset });
+      if (total === null) total = data.count || 0;
+      for (const release of data.releases || []) {
+        // Parts of a split search don't overlap, but a release can come up again in a query that was
+        // split after its first page. One without an id is never taken for another.
+        const key = release.id || {};
+        seen.add(key);
         const group = release['release-group'];
-        if (!group || SKIPPED_STATUSES.includes(release.status)) continue;
+        if (!group || SKIPPED_STATUSES.includes(release.status) || releases.has(key)) continue;
         const formats = formatsOf(release);
         const words = `${release.title || ''} ${release.disambiguation || ''}`;
-        releases.push({
+        releases.set(key, {
           id: release.id,
           groupId: group.id,
           date: release.date || '',
@@ -340,10 +358,49 @@
           edition: /\bdeluxe\b/i.test(words) ? 'Deluxe' : /\bexpanded\b/i.test(words) ? 'Expanded' : null,
         });
       }
-      if (onProgress) onProgress(seen, total);
-      if (!batch.length || seen >= total) break;
+      if (onProgress) onProgress(Math.min(seen.size, total), total);
+      return data;
     }
-    return { releases, complete: seen >= total };
+
+    // Every result of a query. Returns false, after one page, when there are more than MusicBrainz
+    // hands back, unless takeWhatFits is set: then it keeps the first 500.
+    async function pageThrough(query, takeWhatFits) {
+      if (pages >= MAX_RELEASE_PAGES) {
+        complete = false;
+        return true;
+      }
+      const first = await page(query, 0);
+      const count = first.count || 0;
+      if (count > SEARCH_RESULT_LIMIT) {
+        if (!takeWhatFits) return false;
+        complete = false;
+      }
+      let offset = (first.releases || []).length;
+      while (offset && offset < Math.min(count, SEARCH_RESULT_LIMIT)) {
+        if (pages >= MAX_RELEASE_PAGES) {
+          complete = false;
+          break;
+        }
+        const batch = (await page(query, offset)).releases || [];
+        if (!batch.length) break;
+        offset += batch.length;
+      }
+      return true;
+    }
+
+    async function byYears(from, to) {
+      const range = `date:[${from === FIRST_YEAR ? '*' : from} TO ${to === lastYear ? '*' : to}]`;
+      if (await pageThrough(`${base} AND ${range}`, from === to)) return;
+      const middle = Math.floor((from + to) / 2);
+      await byYears(from, middle);
+      await byYears(middle + 1, to);
+    }
+
+    if (!(await pageThrough(base))) {
+      await pageThrough(`${base} AND NOT date:[* TO *]`, true);
+      await byYears(FIRST_YEAR, lastYear);
+    }
+    return { releases: [...releases.values()], complete };
   }
 
   /*
@@ -422,6 +479,6 @@
     getDiscography,
     coverUrl,
     yearOf,
-    internals: { field, formatFromMedia, mediaLabel, creditName },
+    internals: { field, formatFromMedia, mediaLabel, creditName, searchArtistReleases },
   };
 });

@@ -325,22 +325,43 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     assert.equal(await text(page, '#nav-count'), '5');
     assert.equal(await manual.locator('[name=title]').inputValue(), 'dummy');
 
-    // Collection, grouped by artist
+    // Collection: covers by default, under the first letter of the artist ("The" doesn't count)
     await openTab(page, 'collection');
     assert.equal(await text(page, '#collection-summary'), '5 records by 2 artists');
-    assert.deepEqual(await page.locator('.artist-name').evaluateAll((els) => els.map((el) => el.firstChild.textContent)), ['Portishead', 'Radiohead']);
-    assert.match(await text(page, '#collection-list'), /Kid A\n2000 · Double LP/);
+    assert.deepEqual(await page.locator('#collection-list .section-title').allTextContents(), ['P', 'R']);
+    assert.deepEqual(await page.locator('#collection-list .tile-title').allTextContents(), ['Dummy', 'The Bends (Remastered)', 'OK Computer', 'Kid A', 'Live at the Astoria']);
+    assert.equal(await page.locator('#view-switch [data-view=grid]').getAttribute('aria-pressed'), 'true');
+    assert.ok(await page.locator('#az-rail').isHidden(), 'no A to Z for a short list');
     await shot(page, '03-collection');
-    // Thumbnails use the sharper 500px covers
+    // Covers use the sharper 500px images
     assert.ok(coverCalls.some((url) => url.endsWith('/rg-okc/front-500')));
     assert.ok(!coverCalls.some((url) => url.endsWith('front-250')), 'no low-resolution covers');
     await page.fill('#filter-text', 'bends');
-    assert.equal(await page.locator('#collection-list .record').count(), 1);
+    assert.equal(await page.locator('#collection-list li').count(), 1);
     await page.fill('#filter-text', '');
+    // Format and sort live behind Filter; sorting by year heads the list with decades
+    assert.ok(await page.locator('#collection-filters').isHidden());
+    await page.click('#filter-btn');
+    await page.selectOption('#sort', 'year');
+    assert.deepEqual(await page.locator('#collection-list .section-title').allTextContents(), ['1990s', '2000s', 'Year unknown']);
+    await page.selectOption('#filter-format', 'Double LP');
+    assert.deepEqual(await page.locator('#collection-list .tile-title').allTextContents(), ['Kid A']);
+    assert.equal(await page.locator('#filter-btn .count').textContent(), '1', 'Filter shows a format is chosen');
+    await page.selectOption('#filter-format', '');
+    await page.selectOption('#sort', 'artist');
+    await page.click('#filter-btn');
+    // The list view, which the app remembers
+    await page.click('#view-switch [data-view=list]');
+    assert.match(await text(page, '#collection-list'), /Kid A\nRadiohead · 2000 · Double LP/);
+    await page.reload();
+    assert.equal(await page.locator('#view-switch [data-view=list]').getAttribute('aria-pressed'), 'true');
+    await shot(page, '03-collection-list');
 
     // Edit, delete, undo
     await page.locator('.record', { hasText: 'Dummy' }).click();
     assert.ok(await page.locator('#edit-dialog').isVisible());
+    const focused = () => page.evaluate(() => document.activeElement.id || document.activeElement.tagName);
+    assert.equal(await focused(), 'edit-heading', 'no text box is focused, so no cursor or phone keyboard pops up');
     await page.selectOption('#edit-form [name=format]', 'Box set');
     await page.fill('#edit-form [name=notes]', 'Found at a yard sale');
     await shot(page, '04-edit');
@@ -386,9 +407,10 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     assert.equal(new Set(seen).size, 4, `four picks in a row should not repeat: ${seen}`);
     await shot(page, '05-random');
 
-    // Discography from the collection: Radiohead already has a MusicBrainz id
+    // Discography from a record in the collection: Radiohead already has a MusicBrainz id
     await openTab(page, 'collection');
-    await page.locator('.artist-group', { hasText: 'Radiohead' }).getByRole('button', { name: 'Discography' }).click();
+    await page.locator('.record', { hasText: 'OK Computer' }).click();
+    await page.click('#edit-discography');
     await page.locator('#disco-panel').waitFor();
     assert.equal(await text(page, '#disco-name'), 'Radiohead');
     // Vinyl only is on by default. Pablo Honey has no official vinyl in MusicBrainz, but it's a studio
@@ -545,6 +567,7 @@ test('imports a typed list and looks the records up', { skip: !chromium && 'play
     const byTitle = async () => Object.fromEntries((await records()).map((r) => [r.title, r]));
 
     await page.click('#list-import-tools');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'list-heading', 'the list box waits for a tap');
     await page.fill('#list-form [name=list]', [
       'Radiohead - The Bends',
       'Portishead - Dumy (Signed)',
@@ -671,6 +694,24 @@ test('fits a phone screen in light and dark mode', { skip: !chromium && 'playwri
           format: 'LP', notes: '', releaseId: null, addedAt: new Date(2024, 1, 1).toISOString(),
         }]));
       });
+      // A long collection gets the A to Z down the side; tapping a letter scrolls to it
+      await page.evaluate(() => {
+        const records = JSON.parse(localStorage.getItem('recordcatalog.records.v1'));
+        for (let i = 0; i < 40; i++) {
+          records.push({ id: `x${i}`, artist: `${'ABCDEFGHJKLMNOPRSTW'[i % 19]}rtist ${i}`, title: `Album ${i}`, year: 1970 + i, format: 'LP', notes: '', addedAt: new Date(2023, 0, 1).toISOString() });
+        }
+        localStorage.setItem('recordcatalog.records.v1', JSON.stringify(records));
+      });
+      await page.reload();
+      assert.ok(await page.locator('#az-rail').isVisible());
+      assert.equal(await page.locator('#az-rail .off').count(), 27 - 19, 'letters nobody starts with are dimmed');
+      await page.locator('#az-rail [data-letter="P"]').click();
+      const sectionTop = await page.locator('[data-section="P"]').evaluate((el) => el.getBoundingClientRect().top);
+      const headerBottom = await page.locator('.app-header').evaluate((el) => el.getBoundingClientRect().bottom);
+      assert.ok(Math.abs(sectionTop - headerBottom - 8) < 2, `P lands just under the header (${sectionTop} vs ${headerBottom})`);
+      await page.locator('#az-rail [data-letter="Q"]').click();
+      assert.ok(Math.abs(await page.locator('[data-section="R"]').evaluate((el) => el.getBoundingClientRect().top) - headerBottom - 8) < 2, 'Q has nothing, so R');
+
       for (const view of ['collection', 'wishlist', 'add', 'random', 'discography']) {
         await page.goto(`${PAGE_URL}#${view}`);
         await page.reload();

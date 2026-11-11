@@ -106,6 +106,16 @@ a { color: var(--accent); }
 }
 
 .muted { color: var(--muted); }
+
+/* Read by screen readers, not shown. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 .small { font-size: 0.875rem; }
 .center { text-align: center; }
 
@@ -532,8 +542,179 @@ details.card[open] > summary::before { content: "\2212"; }
 
 .summary { margin: 0 0 10px; font-size: 0.925rem; }
 
-.list-card { padding: 10px; }
-.list-card .result { padding-left: 8px; padding-right: 8px; }
+/* ---------- Browsing the collection ---------- */
+
+.segmented + .browse-tools { margin-top: 0; }
+
+.browse-tools {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.browse-tools input { flex: 1; min-width: 0; }
+
+.view-switch {
+  display: flex;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.view-switch button {
+  min-height: 38px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.view-switch button[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+}
+
+.view-switch svg { width: 20px; height: 20px; fill: currentColor; }
+
+#filter-btn.active { border-color: var(--accent); color: var(--accent); }
+#filter-btn .count { margin-left: 2px; }
+
+.filters {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.filters .field[hidden] + .field { grid-column: 1 / -1; }
+
+.browse.with-rail {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 18px;
+  gap: 6px;
+}
+
+.shelf-section + .shelf-section { margin-top: 14px; }
+
+.section-title {
+  margin: 0 0 8px;
+  color: var(--accent);
+  font-size: 1rem;
+}
+
+.shelf-section .card { margin-bottom: 0; padding: 4px; }
+.shelf-section .results { margin-top: 0; padding: 4px 12px; }
+
+/* With the page heading hidden, the Collection / Wishlist switch needs room under the header. */
+.visually-hidden + .segmented { margin-top: 14px; }
+
+/* Covers, three across on a phone, bigger on wider screens */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 14px 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 640px) {
+  .tiles { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 18px 14px; }
+}
+
+.tile {
+  display: grid;
+  align-content: start;
+  justify-content: stretch;
+  gap: 1px;
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-weight: 400;
+  text-align: left;
+  white-space: normal;
+}
+
+.tile:hover { background: none; }
+.tile .cover { margin-bottom: 5px; box-shadow: 0 1px 3px rgb(0 0 0 / 0.18); }
+.tile:hover .cover { box-shadow: 0 0 0 2px var(--accent); }
+
+.tile-title, .tile-artist {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tile-title { font-size: 0.875rem; font-weight: 600; }
+.tile-artist { color: var(--muted); font-size: 0.8rem; }
+
+/* The slimmer list */
+.records.compact .record {
+  grid-template-columns: 44px 1fr;
+  gap: 10px;
+  padding: 6px 8px;
+}
+
+.records.compact .cover-sm { width: 44px; }
+
+.records.compact .record-title,
+.records.compact .record-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+.records.compact li + li { border-top: 1px solid var(--line); }
+
+/* A to Z down the right side, like a phone's contacts */
+.az-rail {
+  position: sticky;
+  top: calc(var(--header-h, 110px) + 6px);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  align-self: start;
+  height: calc(100vh - var(--header-h, 110px) - 20px);
+  height: calc(100dvh - var(--header-h, 110px) - 20px);
+  max-height: 640px;
+  margin-right: -10px;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.az-rail span {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  flex: 1;
+}
+
+.az-rail .off { opacity: 0.35; }
+
+.az-rail .on {
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink, #fff);
+}
+
 
 /* Collection / Wishlist switch at the top of the Collection tab */
 .segmented {
@@ -598,32 +779,6 @@ button.wished {
   padding: 2px 8px;
 }
 
-.artist-group + .artist-group {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
-}
-
-.artist-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 4px 8px 2px;
-}
-
-.artist-name {
-  font-size: 1.1rem;
-  overflow-wrap: anywhere;
-}
-
-.artist-count {
-  margin-left: 8px;
-  color: var(--muted);
-  font-family: var(--font-body);
-  font-size: 0.8rem;
-  font-weight: 600;
-}
 
 .data-tools {
   display: flex;
@@ -764,7 +919,10 @@ button.wished {
     repeating-radial-gradient(circle, var(--vinyl) 0 2px, var(--vinyl-groove) 2px 3px);
 }
 
-.cover-lg .cover-ph {
+.cover-grid { width: 100%; }
+
+.cover-lg .cover-ph,
+.cover-grid .cover-ph {
   align-content: end;
   justify-items: start;
   gap: 2px;
@@ -774,7 +932,12 @@ button.wished {
   text-align: left;
 }
 
-.cover-lg .cover-ph::before { display: none; }
+.cover-lg .cover-ph::before,
+.cover-grid .cover-ph::before { display: none; }
+
+.cover-grid .cover-ph { padding: 9%; }
+.cover-grid .sleeve-title { font-size: 0.8rem; }
+.cover-grid .sleeve-artist { display: none; }
 
 .sleeve-title {
   font-family: var(--font-heading);
@@ -988,6 +1151,10 @@ dialog {
 }
 
 dialog::backdrop { background: rgb(6 8 18 / 0.55); }
+
+/* A dialog opens with its heading focused, not its first text box, so the cursor (and a phone's
+   keyboard) only shows up once you tap a box. The heading needs no focus ring. */
+dialog h2[tabindex="-1"]:focus { outline: none; }
 
 .edit-form { padding: 18px; }
 

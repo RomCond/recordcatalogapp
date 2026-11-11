@@ -243,6 +243,74 @@ test('getDiscography marks vinyl albums and finds deluxe editions', async (t) =>
   assert.equal(result.vinylComplete, true);
 });
 
+// Answers release searches the way MusicBrainz does, including its limit of 500 results per query.
+function fakeReleaseSearch(all) {
+  const calls = [];
+  const fetch = async (url) => {
+    const u = new URL(url);
+    const query = u.searchParams.get('query');
+    calls.push(query.replace(/^arid:"a1" AND format:\([^)]*\)/, ''));
+    const offset = Number(u.searchParams.get('offset'));
+    const limit = Number(u.searchParams.get('limit'));
+    if (offset + limit > 500) return jsonResponse({ error: `Must retrieve at most 500 search results, not ${offset + limit}.` }, 400);
+    const range = /date:\[(\S+) TO (\S+)\]/.exec(query);
+    const year = (r) => Number(r.date.slice(0, 4));
+    const matches = query.includes('NOT date:[* TO *]') ? all.filter((r) => !r.date)
+      : range ? all.filter((r) => r.date && (range[1] === '*' || year(r) >= Number(range[1])) && (range[2] === '*' || year(r) <= Number(range[2])))
+        : all;
+    return jsonResponse({ count: matches.length, releases: matches.slice(offset, offset + limit) });
+  };
+  return { calls, fetch };
+}
+
+// The one-request-a-second queue's pauses end straight away, so these tests don't take half a minute.
+function skipTheWait(t) {
+  t.mock.method(globalThis, 'setTimeout', (callback) => {
+    callback();
+    return 0;
+  });
+}
+
+const pressings = (count, date, from = 0) => Array.from({ length: count }, (_, i) => ({
+  id: `r${from + i}`, status: 'Official', date, title: 'T', 'release-group': { id: `g${(from + i) % 50}` }, media: [{ format: '12" Vinyl' }],
+}));
+
+test('an artist with more vinyl than one search returns is searched year by year', async (t) => {
+  const all = [...pressings(400, '1965-03-01'), ...pressings(380, '1969', 400), ...pressings(300, '2015-05-05', 780), ...pressings(20, '', 1080)];
+  const fake = fakeReleaseSearch(all);
+  t.mock.method(globalThis, 'fetch', fake.fetch);
+  t.mock.method(Date.prototype, 'getFullYear', () => 2026);
+  skipTheWait(t);
+  const progress = [];
+  const { releases, complete } = await mb.internals.searchArtistReleases('a1', 'format:(vinyl OR 12vinyl)', (loaded, total) => progress.push([loaded, total]));
+  assert.equal(releases.length, 1100, 'every pressing, once');
+  assert.equal(complete, true);
+  assert.deepEqual(fake.calls.filter((query, i) => fake.calls.indexOf(query) === i), [
+    '', // 1,100: too many
+    ' AND NOT date:[* TO *]', // the 20 with no date
+    ' AND date:[* TO *]', // 1,080
+    ' AND date:[* TO 1963]', // none
+    ' AND date:[1964 TO *]', // 1,080
+    ' AND date:[1964 TO 1995]', // 780
+    ' AND date:[1964 TO 1979]', // 780
+    ' AND date:[1964 TO 1971]', // 780
+    ' AND date:[1964 TO 1967]', // 400
+    ' AND date:[1968 TO 1971]', // 380
+    ' AND date:[1972 TO 1979]', // none
+    ' AND date:[1980 TO 1995]', // none
+    ' AND date:[1996 TO *]', // 300
+  ]);
+  assert.deepEqual(progress.at(-1), [1100, 1100]);
+});
+
+test('a single year with more than one search returns keeps the first 500 and says so', async (t) => {
+  t.mock.method(globalThis, 'fetch', fakeReleaseSearch(pressings(700, '1970-01-01')).fetch);
+  skipTheWait(t);
+  const { releases, complete } = await mb.internals.searchArtistReleases('a1', 'format:(vinyl OR 12vinyl)');
+  assert.equal(releases.length, 500);
+  assert.equal(complete, false);
+});
+
 test('network and server errors become readable messages', async (t) => {
   t.mock.method(globalThis, 'fetch', async () => { throw new TypeError('Failed to fetch'); });
   await assert.rejects(mb.searchArtists('Low'), /Couldn't reach MusicBrainz/);
