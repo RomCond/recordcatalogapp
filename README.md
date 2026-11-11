@@ -46,7 +46,7 @@ Records that weren't matched are listed above the collection, with no cover or y
 ## How "missing" is worked out
 
 1. The app fetches every album, EP and single credited to the artist on MusicBrainz.
-2. It also checks which of those albums have at least one vinyl pressing: an LP or 12" record, or a 45 or 10" record when those are turned on. Flexi-discs, VinylDisc hybrids and bootlegs don't count.
+2. It also checks which of those albums have at least one vinyl pressing: an LP or 12" record, or a 45 or 10" record when those are turned on. Flexi-discs, VinylDisc hybrids and bootlegs don't count. MusicBrainz search returns at most 500 results at a time, so for artists with more vinyl pressings than that (David Bowie, the Beatles) the app searches a range of years at a time. Those take longer to load, up to about 45 seconds.
 3. Deluxe and expanded editions get their own line right after the original, since they add songs. MusicBrainz usually files them under the original album, so the app finds them by releases whose title or note says "deluxe" or "expanded". All of an album's deluxe releases fold into one line, and owning one edition doesn't tick off the other.
 4. A record you added through search or barcode matches by its MusicBrainz release group id.
 5. A record you typed in by hand matches by title, ignoring case, accents, punctuation and notes like "(2009 Remaster)". If its title says "Deluxe" or "Expanded", it goes on the deluxe line.
