@@ -249,3 +249,24 @@ test('network and server errors become readable messages', async (t) => {
   t.mock.method(globalThis, 'fetch', async () => jsonResponse({}, 400));
   await assert.rejects(mb.searchArtists('Low'), /error \(400\)/);
 });
+
+test('searchAlbumCandidates searches by artist and title, then by alias when the name finds nothing', async (t) => {
+  const calls = [];
+  const group = { id: 'rg9', title: 'SEYCHELLES', 'primary-type': 'Album', 'first-release-date': '1976-07-25', 'artist-credit': [{ name: '高中正義', artist: { id: 'mt' } }] };
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    const parsed = new URL(url);
+    calls.push(parsed);
+    if (parsed.pathname.endsWith('/artist')) return jsonResponse({ artists: [{ id: 'mt', score: 100 }, { id: 'other', score: 40 }] });
+    const query = parsed.searchParams.get('query');
+    return jsonResponse({ 'release-groups': query.startsWith('arid:') ? [group] : [] });
+  });
+  const found = await mb.searchAlbumCandidates('Masayoshi Takanaka', 'Seychelles');
+  assert.equal(calls[0].searchParams.get('query'),
+    '(artist:"Masayoshi Takanaka"^3 OR artist:(masayoshi~ takanaka~))'
+    + ' AND ((releasegroup:"Seychelles"^3 OR releasegroup:(seychelles~)) OR (alias:"Seychelles"^3 OR alias:(seychelles~)))');
+  assert.equal(calls[1].searchParams.get('query'), 'alias:"Masayoshi Takanaka" OR artist:"Masayoshi Takanaka"');
+  assert.match(calls[2].searchParams.get('query'), /^arid:\("mt"\) AND /, 'only artists that clearly match');
+  assert.deepEqual(found, [{
+    releaseGroupId: 'rg9', title: 'SEYCHELLES', artist: '高中正義', artistId: 'mt', year: 1976, primaryType: 'Album', secondaryTypes: [], artistFound: true,
+  }]);
+});

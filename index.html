@@ -49,13 +49,17 @@
           <option value="title">Sort: Title</option>
         </select>
       </div>
+      <div class="lookup" id="lookup" hidden></div>
       <p class="summary muted" id="collection-summary"></p>
       <div class="card list-card" id="collection-list"></div>
       <div class="empty" id="collection-empty" hidden>
         <span class="empty-disc" aria-hidden="true"></span>
         <h2>Your shelf is empty</h2>
         <p class="muted">Search by artist, album or barcode and add a record in one tap.</p>
-        <a class="button primary" href="#add">Add your first record</a>
+        <div class="empty-actions">
+          <a class="button primary" href="#add">Add your first record</a>
+          <button type="button" class="list-import-btn">Import a list</button>
+        </div>
       </div>
       <div class="empty" id="wishlist-empty" hidden>
         <span class="empty-disc" aria-hidden="true"></span>
@@ -64,6 +68,7 @@
         <a class="button primary" href="#discography">Go to Discography</a>
       </div>
       <div class="data-tools">
+        <button type="button" class="list-import-btn" id="list-import-tools">Import a list</button>
         <button type="button" id="export-btn">Export backup</button>
         <button type="button" id="import-btn">Import backup</button>
         <input type="file" id="import-file" accept=".json,application/json" hidden>
@@ -192,6 +197,24 @@
         <span class="spacer"></span>
         <button type="button" class="link" id="edit-discography">Discography</button>
         <button type="button" class="link danger" id="edit-delete">Delete</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="list-dialog" aria-labelledby="list-heading">
+    <form method="dialog" id="list-form" class="edit-form">
+      <h2 id="list-heading">Import a list</h2>
+      <p class="muted small list-help">Paste your list or choose a text file, one record per line with the artist, a dash, then the title: <q>Steely Dan - Aja</q>. Anything in brackets at the end, like <q>(Signed)</q>, is kept as a note, and <q>(45)</q> or <q>(Single)</q> makes it a 45. Covers, years and spellings are looked up after.</p>
+      <label class="field"><span>Your list</span><textarea name="list" rows="9" spellcheck="false" autocomplete="off" placeholder="Steely Dan - Aja&#10;Rush - Moving Pictures (Signed)&#10;Weezer - Pinkerton (Deluxe)"></textarea></label>
+      <div class="list-options">
+        <button type="button" id="list-file-btn">Choose a file</button>
+        <input type="file" id="list-file" accept=".txt,.csv,.tsv,text/plain,text/csv" hidden>
+        <label class="add-as">Add as <select name="format" id="list-format" aria-label="Format for the imported records"></select></label>
+      </div>
+      <div class="list-summary" id="list-summary" aria-live="polite"></div>
+      <div class="dialog-actions">
+        <button value="import" class="primary" id="list-submit" disabled>Add records</button>
+        <button type="button" id="list-cancel">Cancel</button>
       </div>
     </form>
   </dialog>

@@ -104,6 +104,14 @@
     return `(${name}:${phrase(text.trim())}^3 OR ${name}:(${terms(text, prefixLast)}))`;
   }
 
+  // Words with an allowance for typos: "metalica~" also finds "Metallica". Punctuation splits words
+  // ("T.Rex" is "t rex"); short words and ones with apostrophes are matched as typed.
+  function fuzzyTerms(text) {
+    return text.toLowerCase().replace(/[^\p{L}\p{N}'’]+/gu, ' ').split(/\s+/).filter(Boolean)
+      .map((word) => (word.length >= 4 && /^[\p{L}\p{N}]+$/u.test(word) ? `${word}~` : escapeWord(word)))
+      .join(' ');
+  }
+
   // 8 to 14 digits (spaces and dashes allowed) is a barcode. Shorter numbers are titles like "1989".
   function looksLikeBarcode(text) {
     return /^\d{8,14}$/.test(text.replace(/[\s-]/g, ''));
@@ -264,6 +272,36 @@
     return { results: await searchReleaseGroups(text, signal, small), hiddenNonVinyl: 0, hiddenSmall: 0 };
   }
 
+  /*
+   * Releases that might be what a typed-in record means, typos and all, for store.bestAlbumMatch to
+   * choose from. When nothing turns up, the artist may be filed under another name (Masayoshi Takanaka
+   * is 高中正義), so they're looked up by alias and their releases searched by id; those candidates
+   * come back with artistFound set.
+   */
+  async function searchAlbumCandidates(artist, title, signal) {
+    const part = (name, text) => `(${name}:${phrase(text.trim())}^3 OR ${name}:(${fuzzyTerms(text)}))`;
+    const titlePart = `(${part('releasegroup', title)} OR ${part('alias', title)})`;
+    const groupsFor = async (artistPart, extra) => {
+      const data = await get('release-group', { query: `${artistPart} AND ${titlePart}`, limit: 25 }, signal);
+      return (data['release-groups'] || []).map((group) => ({
+        releaseGroupId: group.id,
+        title: group.title,
+        artist: creditName(group['artist-credit']),
+        artistId: mainArtistId(group['artist-credit']),
+        year: yearOf(group['first-release-date']),
+        primaryType: group['primary-type'] || null,
+        secondaryTypes: group['secondary-types'] || [],
+        ...extra,
+      }));
+    };
+    const byName = await groupsFor(part('artist', artist), {});
+    if (byName.length) return byName;
+    const name = phrase(artist.trim());
+    const data = await get('artist', { query: `alias:${name} OR artist:${name}`, limit: 3 }, signal);
+    const ids = (data.artists || []).filter((found) => (found.score || 0) >= 95).map((found) => `"${found.id}"`);
+    return ids.length ? groupsFor(`arid:(${ids.join(' OR ')})`, { artistFound: true }) : [];
+  }
+
   async function searchArtists(name) {
     const data = await get('artist', { query: field('artist', name.trim()), limit: 8 });
     return (data.artists || []).map((artist) => ({
@@ -379,6 +417,7 @@
     searchReleaseGroups,
     searchBarcode,
     searchArtists,
+    searchAlbumCandidates,
     looksLikeBarcode,
     getDiscography,
     coverUrl,

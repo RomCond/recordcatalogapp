@@ -638,6 +638,86 @@ button.wished {
   text-align: center;
 }
 
+.empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* ---------- Importing a list ---------- */
+
+.lookup {
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+
+.lookup p { margin: 0; }
+.lookup .progress { margin: 10px 0 8px; background: var(--surface); }
+
+.lookup-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+
+.lookup-row p { flex: 1 1 200px; }
+.lookup-head { font-weight: 600; }
+.lookup .lookup-row + p { margin-top: 6px; }
+
+.lookup-list { margin-top: 10px; }
+
+.lookup-list > summary {
+  color: var(--accent);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.lookup-list .records {
+  margin-top: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.list-help { margin: 8px 0 14px; }
+
+.list-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.list-options .add-as { margin-top: 0; }
+
+.list-summary:not(:empty) { margin-top: 14px; }
+.list-summary p { margin: 0 0 6px; }
+.list-count { font-weight: 600; }
+
+.list-problem {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 0.925rem;
+}
+
+.list-problem ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  overflow-wrap: anywhere;
+}
+
+.list-problem p:last-child { margin: 4px 0 0; }
+
 .empty h2 { margin-bottom: 6px; font-size: 1.4rem; }
 .empty p { margin: 0 0 18px; }
 
