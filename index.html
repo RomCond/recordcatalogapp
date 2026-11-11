@@ -34,24 +34,40 @@
   <main class="wrap">
     <!-- Collection -->
     <section id="view-collection" class="view" aria-labelledby="collection-heading">
-      <h1 id="collection-heading" class="view-title">Your collection</h1>
+      <h1 id="collection-heading" class="view-title visually-hidden">Your collection</h1>
       <nav class="segmented" aria-label="Lists">
         <a href="#collection">Collection <span class="count" id="count-collection">0</span></a>
         <a href="#wishlist">Wishlist <span class="count" id="count-wishlist">0</span></a>
       </nav>
-      <div class="toolbar" id="collection-tools">
-        <input type="search" id="filter-text" placeholder="Search artist, title or notes" aria-label="Search your records">
-        <select id="filter-format" aria-label="Filter by format"></select>
-        <select id="sort" aria-label="Sort by">
-          <option value="artist">Sort: Artist</option>
-          <option value="added">Sort: Recently added</option>
-          <option value="year">Sort: Year</option>
-          <option value="title">Sort: Title</option>
-        </select>
+      <div class="browse-tools" id="collection-tools">
+        <input type="search" id="filter-text" placeholder="Search records" aria-label="Search your records">
+        <div class="view-switch" id="view-switch" role="group" aria-label="Show records as">
+          <button type="button" data-view="grid" aria-label="Covers" title="Covers">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2" y="2" width="7" height="7" rx="1.5"/><rect x="11" y="2" width="7" height="7" rx="1.5"/><rect x="2" y="11" width="7" height="7" rx="1.5"/><rect x="11" y="11" width="7" height="7" rx="1.5"/></svg>
+          </button>
+          <button type="button" data-view="list" aria-label="List" title="List">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2" y="3" width="4" height="4" rx="1"/><rect x="8" y="4" width="10" height="2" rx="1"/><rect x="2" y="8" width="4" height="4" rx="1"/><rect x="8" y="9" width="10" height="2" rx="1"/><rect x="2" y="13" width="4" height="4" rx="1"/><rect x="8" y="14" width="10" height="2" rx="1"/></svg>
+          </button>
+        </div>
+        <button type="button" id="filter-btn" aria-expanded="false" aria-controls="collection-filters">Filter</button>
+      </div>
+      <div class="filters" id="collection-filters" hidden>
+        <label class="field" id="filter-format-field"><span>Format</span><select id="filter-format"></select></label>
+        <label class="field"><span>Sort by</span>
+          <select id="sort">
+            <option value="artist">Artist</option>
+            <option value="added">Recently added</option>
+            <option value="year">Year</option>
+            <option value="title">Title</option>
+          </select>
+        </label>
       </div>
       <div class="lookup" id="lookup" hidden></div>
       <p class="summary muted" id="collection-summary"></p>
-      <div class="card list-card" id="collection-list"></div>
+      <div class="browse" id="browse">
+        <div id="collection-list"></div>
+        <div class="az-rail" id="az-rail" aria-hidden="true" hidden></div>
+      </div>
       <div class="empty" id="collection-empty" hidden>
         <span class="empty-disc" aria-hidden="true"></span>
         <h2>Your shelf is empty</h2>

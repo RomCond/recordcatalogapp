@@ -130,15 +130,15 @@
   }
 
   // Cover Art Archive sizes in pixels, about 3x the size shown so covers stay sharp on phone screens.
-  const COVER_SIZES = { sm: [500], md: [500], lg: [1200, 500] };
+  const COVER_SIZES = { sm: [500], md: [500], grid: [500], lg: [1200, 500] };
   // Covers that have loaded once show straight away when a list is drawn again, instead of fading in.
   const loadedCovers = new Set();
 
-  // Cover art from the Cover Art Archive, over a placeholder for when there is none:
-  // a vinyl label for thumbnails, a plain sleeve with the title for the big random pick.
+  // Cover art from the Cover Art Archive, over a placeholder for when there is none: a vinyl label
+  // for thumbnails, a plain sleeve with the title for the big random pick and the collection's covers.
   function cover(item, size) {
     const box = h('div', { class: `cover cover-${size}`, 'aria-hidden': 'true' });
-    const placeholder = size === 'lg'
+    const placeholder = size === 'lg' || size === 'grid'
       ? h('div', { class: 'cover-ph' }, h('span', { class: 'sleeve-title' }, item.title), h('span', { class: 'sleeve-artist' }, item.artist))
       : h('div', { class: 'cover-ph' });
     placeholder.style.setProperty('--label', labelColor(item));
@@ -338,6 +338,15 @@
           h('span', { class: 'record-meta' }, meta(showArtist && record.artist, record.year, record.format)))));
   }
 
+  // A record in the cover view: its cover, with the title and artist underneath.
+  function recordTile(record) {
+    return h('li', {},
+      h('button', { type: 'button', class: 'tile', onclick: () => openEditor(record.id) },
+        cover(record, 'grid'),
+        h('span', { class: 'tile-title' }, record.title),
+        h('span', { class: 'tile-artist' }, record.artist)));
+  }
+
   function wishRow(wish, showArtist) {
     return h('li', { class: 'result' },
       cover(wish, 'sm'),
@@ -353,6 +362,29 @@
     addWithUndo({ ...wish, id: null, addedAt: null, format: $('#add-format').value });
   }
 
+  // The collection shows as covers (grid) or as a list. The wishlist is always a list, since its
+  // records have buttons.
+  const collectionView = () => store.getPref('collectionView', 'grid');
+
+  function setCollectionView(view) {
+    store.setPref('collectionView', view);
+    renderCollection();
+  }
+
+  // Where a record goes under the current sort: the first letter of the artist ("The" doesn't count)
+  // or of the title, the decade for year order, and no headings for recently added.
+  const letterOf = (text) => {
+    const first = S.fold(text).charAt(0).toUpperCase();
+    return /^[A-Z]$/.test(first) ? first : '#';
+  };
+
+  function sectionOf(record, sort) {
+    if (sort === 'artist') return letterOf(S.normArtist(record.artist));
+    if (sort === 'title') return letterOf(S.normTitle(record.title));
+    if (sort === 'year') return record.year ? `${Math.floor(record.year / 10) * 10}s` : 'Year unknown';
+    return '';
+  }
+
   function renderCollection() {
     const wishlistMode = currentRoute() === 'wishlist';
     const records = store.all();
@@ -365,19 +397,29 @@
       if (link.getAttribute('href') === (wishlistMode ? '#wishlist' : '#collection')) link.setAttribute('aria-current', 'page');
       else link.removeAttribute('aria-current');
     }
-    $('#filter-format').hidden = wishlistMode;
+    $('#filter-format-field').hidden = wishlistMode;
+    $('#view-switch').hidden = wishlistMode;
     $('#list-import-tools').hidden = !wishlistMode && !records.length; // the empty shelf has its own button
     renderLookup();
     $('#collection-empty').hidden = wishlistMode || all.length > 0;
     $('#wishlist-empty').hidden = !wishlistMode || all.length > 0;
     $('#collection-tools').hidden = all.length === 0;
-    $('#collection-list').hidden = all.length === 0;
+    $('#browse').hidden = all.length === 0;
     $('#collection-summary').hidden = all.length === 0;
-    if (!all.length) return;
+    if (!all.length) {
+      $('#collection-filters').hidden = true;
+      return;
+    }
 
     const query = S.fold($('#filter-text').value.trim());
     const format = wishlistMode ? '' : $('#filter-format').value;
     const sort = $('#sort').value;
+    const view = wishlistMode ? 'list' : collectionView();
+    for (const button of document.querySelectorAll('#view-switch button')) button.setAttribute('aria-pressed', String(button.dataset.view === view));
+    const filterButton = $('#filter-btn');
+    filterButton.replaceChildren('Filter', ...(format ? [h('span', { class: 'count' }, '1')] : []));
+    filterButton.classList.toggle('active', Boolean(format));
+
     const list = all
       .filter((r) => !format || r.format === format)
       .filter((r) => !query || S.fold(`${r.artist} ${r.title} ${r.notes} ${r.year || ''}`).includes(query))
@@ -389,30 +431,70 @@
       : `Showing ${list.length} of ${plural(all.length, 'record')}`;
 
     const target = $('#collection-list');
+    target.className = view === 'grid' ? 'grid-view' : 'list-view';
     if (!list.length) {
       target.replaceChildren(h('p', { class: 'muted center' }, 'No records match that search.'));
+      renderRail([]);
       return;
     }
 
-    const row = wishlistMode ? wishRow : recordRow;
-    const listClass = wishlistMode ? 'results' : 'records';
-    if (sort !== 'artist') {
-      target.replaceChildren(h('ul', { class: listClass }, list.map((r) => row(r, true))));
-      return;
-    }
-
-    const groups = [];
+    const sections = new Map();
     for (const record of list) {
-      const key = S.normArtist(record.artist);
-      const last = groups[groups.length - 1];
-      if (last && last.key === key) last.records.push(record);
-      else groups.push({ key, name: record.artist, records: [record] });
+      const key = sectionOf(record, sort);
+      if (!sections.has(key)) sections.set(key, []);
+      sections.get(key).push(record);
     }
-    target.replaceChildren(...groups.map((group) => h('section', { class: 'artist-group' },
-      h('div', { class: 'artist-head' },
-        h('h2', { class: 'artist-name' }, group.name, h('span', { class: 'artist-count' }, group.records.length)),
-        h('button', { type: 'button', class: 'link small', onclick: () => goToDiscography(group.name) }, 'Discography')),
-      h('ul', { class: listClass }, group.records.map((r) => row(r, false))))));
+    const row = wishlistMode ? (r) => wishRow(r, true) : view === 'grid' ? recordTile : (r) => recordRow(r, true);
+    const listClass = wishlistMode ? 'results card' : view === 'grid' ? 'tiles' : 'records compact card';
+    target.replaceChildren(...[...sections].map(([key, group]) => h('section', { class: 'shelf-section', 'data-section': key },
+      key ? h('h2', { class: 'section-title' }, key) : null,
+      h('ul', { class: listClass }, group.map(row)))));
+    // The letters down the side are for long lists in alphabetical order.
+    renderRail(!wishlistMode && list.length > 20 && (sort === 'artist' || sort === 'title') ? [...sections.keys()] : []);
+  }
+
+  // ---------- A to Z ----------
+
+  const RAIL_LETTERS = '#ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+
+  function renderRail(letters) {
+    const rail = $('#az-rail');
+    const show = letters.length > 1;
+    rail.hidden = !show;
+    $('#browse').classList.toggle('with-rail', show);
+    if (!show) return;
+    rail.replaceChildren(...RAIL_LETTERS.map((letter) => h('span', { class: letters.includes(letter) ? '' : 'off', 'data-letter': letter }, letter)));
+  }
+
+  // Scrolls to a letter's heading, or the nearest one after it when nothing starts with that letter.
+  function jumpToLetter(letter) {
+    const sections = [...document.querySelectorAll('#collection-list .shelf-section')];
+    const at = RAIL_LETTERS.indexOf(letter);
+    const target = sections.find((el) => RAIL_LETTERS.indexOf(el.dataset.section) >= at) || sections[sections.length - 1];
+    if (!target) return;
+    const top = target.getBoundingClientRect().top + window.scrollY - $('.app-header').offsetHeight - 8;
+    window.scrollTo(0, top);
+    for (const el of $('#az-rail').children) el.classList.toggle('on', el.dataset.letter === letter);
+  }
+
+  // Tap a letter, or slide a finger along the letters, like a phone's contacts.
+  function onRailPointer(event) {
+    if (event.type === 'pointermove' && !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    if (event.type === 'pointerdown') event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+    const letter = [...event.currentTarget.children].find((el) => {
+      const box = el.getBoundingClientRect();
+      return event.clientY >= box.top && event.clientY < box.bottom;
+    });
+    if (letter && letter.dataset.letter !== event.currentTarget.dataset.current) {
+      event.currentTarget.dataset.current = letter.dataset.letter;
+      jumpToLetter(letter.dataset.letter);
+    }
+  }
+
+  function endRailPointer(event) {
+    delete event.currentTarget.dataset.current;
+    for (const el of event.currentTarget.children) el.classList.remove('on');
   }
 
   // ---------- Edit dialog ----------
@@ -1148,6 +1230,23 @@
   $('#storage-warning').hidden = store.persistent;
 
   $('#filter-text').addEventListener('input', renderCollection);
+  for (const button of document.querySelectorAll('#view-switch button')) {
+    button.addEventListener('click', () => setCollectionView(button.dataset.view));
+  }
+  $('#filter-btn').addEventListener('click', () => {
+    const panel = $('#collection-filters');
+    panel.hidden = !panel.hidden;
+    $('#filter-btn').setAttribute('aria-expanded', String(!panel.hidden));
+  });
+  const rail = $('#az-rail');
+  rail.addEventListener('pointerdown', onRailPointer);
+  rail.addEventListener('pointermove', onRailPointer);
+  rail.addEventListener('pointerup', endRailPointer);
+  rail.addEventListener('pointercancel', endRailPointer);
+  // The A to Z letters stay below the header, whose height depends on the screen width.
+  const headerHeight = () => document.documentElement.style.setProperty('--header-h', `${$('.app-header').offsetHeight}px`);
+  headerHeight();
+  window.addEventListener('resize', headerHeight);
   $('#filter-format').addEventListener('change', renderCollection);
   $('#sort').addEventListener('change', (e) => {
     store.setPref('sort', e.target.value);
