@@ -131,6 +131,8 @@
 
   // Cover Art Archive sizes in pixels, about 3x the size shown so covers stay sharp on phone screens.
   const COVER_SIZES = { sm: [500], md: [500], lg: [1200, 500] };
+  // Covers that have loaded once show straight away when a list is drawn again, instead of fading in.
+  const loadedCovers = new Set();
 
   // Cover art from the Cover Art Archive, over a placeholder for when there is none:
   // a vinyl label for thumbnails, a plain sleeve with the title for the big random pick.
@@ -145,7 +147,11 @@
       const sizes = COVER_SIZES[size];
       let attempt = 0;
       const img = h('img', { src: mb.coverUrl(item.releaseGroupId, sizes[0]), alt: '', loading: 'lazy', decoding: 'async' });
-      img.addEventListener('load', () => box.classList.add('loaded'));
+      if (loadedCovers.has(img.src)) box.classList.add('loaded');
+      img.addEventListener('load', () => {
+        loadedCovers.add(img.src);
+        box.classList.add('loaded');
+      });
       // Try the next size down if the big one isn't there, then leave the placeholder showing.
       img.addEventListener('error', () => {
         attempt += 1;
@@ -177,6 +183,7 @@
     fillFormatSelect($('#filter-format'), 'All formats');
     fillFormatSelect($('#random-format'), 'Any format');
     fillFormatSelect($('#add-format'));
+    fillFormatSelect($('#list-format'));
     fillFormatSelect($('#manual-form').elements.format);
     fillFormatSelect($('#edit-form').elements.format);
   }
@@ -359,6 +366,8 @@
       else link.removeAttribute('aria-current');
     }
     $('#filter-format').hidden = wishlistMode;
+    $('#list-import-tools').hidden = !wishlistMode && !records.length; // the empty shelf has its own button
+    renderLookup();
     $('#collection-empty').hidden = wishlistMode || all.length > 0;
     $('#wishlist-empty').hidden = !wishlistMode || all.length > 0;
     $('#collection-tools').hidden = all.length === 0;
@@ -432,14 +441,23 @@
   function onEditorClosed() {
     if ($('#edit-dialog').returnValue !== 'save' || !editingId) return;
     const fields = $('#edit-form').elements;
+    const before = store.get(editingId);
     try {
-      store.update(editingId, {
+      const saved = store.update(editingId, {
         artist: fields.artist.value,
         title: fields.title.value,
         year: fields.year.value,
         format: fields.format.value,
         notes: fields.notes.value,
       });
+      // An imported record that wasn't found gets looked up again once its artist or title is fixed.
+      if (before && lookupSession.unmatched.includes(saved.id) && (saved.artist !== before.artist || saved.title !== before.title)) {
+        lookupSession.unmatched = lookupSession.unmatched.filter((id) => id !== saved.id);
+        saveLookupSession();
+        store.update(saved.id, { pendingLookup: true });
+        toast('Saved. Looking it up again.');
+        return;
+      }
       toast('Saved');
     } catch (e) {
       toast(e.message);
@@ -896,6 +914,215 @@
     }
   }
 
+  // ---------- Importing a list ----------
+
+  // Records to add from the list in the import dialog, minus albums already in the collection.
+  let listItems = [];
+
+  function openListImport() {
+    $('#list-form').reset();
+    $('#list-format').value = $('#add-format').value;
+    previewList();
+    const dialog = $('#list-dialog');
+    dialog.returnValue = '';
+    dialog.showModal();
+  }
+
+  // Says what the import will do, as the list is typed, pasted or loaded from a file.
+  function previewList() {
+    const { items, unreadable, merged } = S.parseRecordList($('#list-form').elements.list.value);
+    listItems = items.filter((item) => !store.findCopy(item));
+    const owned = items.length - listItems.length;
+    const notes = [];
+    if (owned) notes.push(`${plural(owned, 'record')} already in your collection ${owned === 1 ? 'is' : 'are'} skipped.`);
+    if (merged) notes.push(`${plural(merged, 'line')} named an album already on the list, so ${merged === 1 ? 'it was' : 'they were'} combined into one record with a note like "2 copies".`);
+    const summary = [];
+    if (listItems.length) summary.push(h('p', { class: 'list-count' }, `${plural(listItems.length, 'record')} to add.`));
+    if (notes.length) summary.push(h('p', { class: 'muted small' }, notes.join(' ')));
+    if (unreadable.length) {
+      const shown = unreadable.slice(0, 5);
+      summary.push(h('div', { class: 'list-problem' },
+        h('p', {}, `${plural(unreadable.length, 'line')} couldn't be read, so ${unreadable.length === 1 ? "it's" : "they're"} left out. Each line needs an artist, a dash with a space on each side, then the title.`),
+        h('ul', {}, shown.map((line) => h('li', {}, line))),
+        unreadable.length > shown.length ? h('p', { class: 'small' }, `and ${unreadable.length - shown.length} more`) : null));
+    }
+    $('#list-summary').replaceChildren(...summary);
+    $('#list-submit').disabled = !listItems.length;
+    $('#list-submit').textContent = listItems.length ? `Add ${plural(listItems.length, 'record')}` : 'Add records';
+  }
+
+  async function loadListFile(event) {
+    const file = event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+    try {
+      $('#list-form').elements.list.value = await file.text();
+    } catch (e) {
+      toast("Couldn't read that file.");
+      return;
+    }
+    previewList();
+  }
+
+  function onListDialogClosed() {
+    if ($('#list-dialog').returnValue === 'import') importList();
+  }
+
+  // Adds the records straight away, then looks each one up on MusicBrainz in the background.
+  function importList() {
+    const format = $('#list-format').value;
+    const inputs = listItems.map((item) => ({
+      artist: item.artist, title: item.title, notes: item.notes, format: item.format || format, pendingLookup: true,
+    }));
+    const wishes = inputs.map((input) => store.findWish(input)).filter(Boolean);
+    const { added } = store.addMany(inputs);
+    if (!added.length) {
+      toast('Those records are already in your collection.');
+      return;
+    }
+    // The lookups may have started already, from the change to the collection, and listed some.
+    for (const record of added) if (!lookupSession.ids.includes(record.id)) lookupSession.ids.push(record.id);
+    saveLookupSession();
+    if (currentRoute() !== 'collection') location.hash = '#collection';
+    toast(`Added ${plural(added.length, 'record')}`, {
+      label: 'Undo',
+      run: () => {
+        store.removeMany(added.map((record) => record.id));
+        for (const wish of wishes) {
+          try {
+            store.addToWishlist(wish);
+          } catch (ignored) {} // already back, or added again since
+        }
+      },
+    });
+    runLookups();
+  }
+
+  // ---------- Looking up imported records ----------
+
+  // The records from the latest import, and which of them MusicBrainz had nothing certain for.
+  // Saved, so the list of records to fix is still there after the app is closed.
+  let lookupSession = store.getPref('lookup', null) || { ids: [], unmatched: [] };
+  const lookup = { running: false, error: null };
+  let lookupListOpen = false;
+
+  function saveLookupSession() {
+    store.setPref('lookup', lookupSession);
+  }
+
+  function dismissLookup() {
+    lookupSession = { ids: [], unmatched: [] };
+    saveLookupSession();
+    renderLookup();
+  }
+
+  // Works through the records waiting for a lookup, one at a time, since MusicBrainz allows about one
+  // request a second. Stops if MusicBrainz can't be reached; the rest wait for "Try again", or for the
+  // next time the app opens.
+  async function runLookups() {
+    if (lookup.running) return;
+    lookup.running = true;
+    lookup.error = null;
+    renderLookup();
+    try {
+      let record;
+      while ((record = store.all().find((r) => r.pendingLookup))) {
+        if (!lookupSession.ids.includes(record.id)) {
+          lookupSession.ids.push(record.id);
+          saveLookupSession();
+        }
+        const candidates = await mb.searchAlbumCandidates(record.artist, record.title);
+        finishLookup(record, candidates);
+      }
+    } catch (e) {
+      lookup.error = e.message;
+    } finally {
+      lookup.running = false;
+      renderLookup();
+    }
+  }
+
+  function finishLookup(record, candidates) {
+    const current = store.get(record.id);
+    // Deleted, or edited while it was being looked up: the new artist and title get their own lookup.
+    if (!current || !current.pendingLookup || current.artist !== record.artist || current.title !== record.title) return;
+    const match = S.bestAlbumMatch(current, candidates);
+    const patch = match && matchPatch(current, match);
+    // A match that's another record already on the shelf is left for you to sort out.
+    if (patch && !store.all().some((r) => r.id !== current.id && S.sameAlbum(r, { ...current, ...patch }))) {
+      store.update(current.id, patch);
+      return;
+    }
+    if (!lookupSession.unmatched.includes(current.id)) lookupSession.unmatched.push(current.id);
+    saveLookupSession();
+    store.update(current.id, { pendingLookup: false });
+  }
+
+  // What a match changes on an imported record: the MusicBrainz link that brings its cover, the year,
+  // and MusicBrainz's spelling of the title, and of the artist when the typed one is only a typo away.
+  // A deluxe edition keeps its typed title, so it stays on its own line in the discography.
+  function matchPatch(record, match) {
+    return {
+      pendingLookup: false,
+      releaseGroupId: match.releaseGroupId,
+      artistId: match.artistId || null,
+      year: record.year || match.year || null,
+      title: S.isDeluxe(record.title) && !S.isDeluxe(match.title) ? record.title : match.title,
+      artist: match.renameArtist ? match.artist : record.artist,
+    };
+  }
+
+  // The panel above the collection: progress while records are looked up, then the ones not found.
+  function renderLookup() {
+    const panel = $('#lookup');
+    const records = new Map(store.all().map((record) => [record.id, record]));
+    const ids = lookupSession.ids.filter((id) => records.has(id));
+    if (!ids.length && lookupSession.ids.length) dismissLookup(); // all removed, by Undo or by hand
+    if (!ids.length || currentRoute() !== 'collection') {
+      panel.hidden = true;
+      return;
+    }
+    panel.hidden = false;
+    const pending = ids.filter((id) => records.get(id).pendingLookup);
+    const done = ids.length - pending.length;
+
+    if (pending.length) {
+      const paused = !lookup.running && lookup.error;
+      const bar = h('div', { class: 'progress-bar' });
+      bar.style.width = `${Math.round((done / ids.length) * 100)}%`;
+      panel.replaceChildren(
+        h('p', { class: 'lookup-head' }, paused ? 'Lookups paused' : `Looking up covers and years: ${done} of ${ids.length}`),
+        h('div', { class: 'progress', role: 'progressbar', 'aria-label': 'Records looked up', 'aria-valuemin': '0', 'aria-valuemax': String(ids.length), 'aria-valuenow': String(done) }, bar),
+        paused
+          ? h('div', { class: 'lookup-row' },
+            h('p', { class: 'muted small' }, `${lookup.error} ${plural(pending.length, 'record')} still to look up.`),
+            h('button', { type: 'button', onclick: runLookups }, 'Try again'))
+          : h('p', { class: 'muted small' }, 'About a second per record. You can keep using the app meanwhile.'));
+      return;
+    }
+
+    const unmatched = lookupSession.unmatched.map((id) => records.get(id)).filter((record) => record && !record.releaseGroupId);
+    const matched = ids.length - unmatched.length;
+    const dismiss = h('button', { type: 'button', class: 'link small', onclick: dismissLookup }, 'Dismiss');
+    if (!unmatched.length) {
+      panel.replaceChildren(h('div', { class: 'lookup-row' },
+        h('p', { class: 'lookup-head' }, ids.length === 1 ? 'Found your imported record on MusicBrainz.' : `Found all ${ids.length} imported records on MusicBrainz.`),
+        dismiss));
+      return;
+    }
+    const they = unmatched.length === 1 ? 'it has' : 'they have';
+    const list = h('details', { class: 'lookup-list', ontoggle: (e) => { lookupListOpen = e.target.open; } },
+      h('summary', {}, `Show ${unmatched.length === 1 ? 'it' : `the ${unmatched.length}`}`),
+      h('ul', { class: 'records' }, unmatched.sort(SORTS.artist).map((record) => recordRow(record, true))));
+    list.open = lookupListOpen;
+    panel.replaceChildren(
+      h('div', { class: 'lookup-row' },
+        h('p', { class: 'lookup-head' }, `Found ${matched} of ${ids.length} imported records on MusicBrainz.`),
+        dismiss),
+      h('p', { class: 'muted small' }, `${plural(unmatched.length, 'record')} ${unmatched.length === 1 ? "wasn't" : "weren't"} matched for certain, so ${they} no cover or year. Tap ${unmatched.length === 1 ? 'it' : 'one'} to fix its artist or title and it's looked up again.`),
+      list);
+  }
+
   // Turns 45s and 10" records on or off everywhere: format menus, search and the discography.
   function setSmallRecords(on) {
     store.setPref('smallRecords', on);
@@ -926,6 +1153,12 @@
     store.setPref('sort', e.target.value);
     renderCollection();
   });
+  for (const button of document.querySelectorAll('.list-import-btn')) button.addEventListener('click', openListImport);
+  $('#list-form').elements.list.addEventListener('input', previewList);
+  $('#list-file-btn').addEventListener('click', () => $('#list-file').click());
+  $('#list-file').addEventListener('change', loadListFile);
+  $('#list-cancel').addEventListener('click', () => $('#list-dialog').close('cancel'));
+  $('#list-dialog').addEventListener('close', onListDialogClosed);
   $('#export-btn').addEventListener('click', exportBackup);
   $('#import-btn').addEventListener('click', () => $('#import-file').click());
   $('#import-file').addEventListener('change', importBackup);
@@ -961,9 +1194,13 @@
     renderDiscography();
     if (currentView() === 'random') renderRandomFilters();
     if (currentView() === 'discography') renderDiscoArtists();
+    // Records waiting for a lookup, from a backup or an edit, start one. Not after an error, though:
+    // that waits for "Try again".
+    if (!lookup.running && !lookup.error && store.all().some((record) => record.pendingLookup)) runLookups();
   });
 
   window.addEventListener('hashchange', showView);
   renderCollection();
   showView();
+  if (store.all().some((record) => record.pendingLookup)) runLookups();
 })();

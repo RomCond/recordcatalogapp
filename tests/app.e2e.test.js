@@ -71,12 +71,27 @@ const DELUXE_RELEASES = {
   ],
 };
 
+// Answers to the album lookups for an imported list, by the title searched for. "Weezer" is two
+// different albums, so it can't be matched until the title says which.
+const found = (id, title, date, artist, artistId, primaryType = 'Album') => ({ ...rg(id, title, date, primaryType), 'artist-credit': credit(artist, artistId) });
+const ALBUM_LOOKUPS = {
+  Dumy: [found('rg-dummy', 'Dummy', '1994-08-22', 'Portishead', 'a-portishead')],
+  'Kid A': [found('rg-kida', 'Kid A', '2000-10-02', 'Radiohead', 'a-radiohead')],
+  Creep: [found('rg-creep-album', 'Creep', '2009', 'Radiohead', 'a-radiohead'), found('rg-creep', 'Creep', '1992-09-21', 'Radiohead', 'a-radiohead', 'Single')],
+  Weezer: [found('rg-blue', 'Weezer', '1994-05-10', 'Weezer', 'a-weezer'), found('rg-green', 'Weezer', '2001-05-15', 'Weezer', 'a-weezer')],
+  'Weezer (Blue Album)': [found('rg-blue', 'Weezer (Blue Album)', '1994-05-10', 'Weezer', 'a-weezer')],
+};
+
 function fakeMusicBrainz(url) {
   const params = url.searchParams;
   const query = params.get('query') || '';
   if (url.pathname === '/ws/2/release-group' && params.get('artist')) {
     const groups = DISCOGRAPHIES[params.get('artist')] || [];
     return { 'release-group-count': groups.length, 'release-group-offset': 0, 'release-groups': groups };
+  }
+  if (url.pathname === '/ws/2/release-group' && query.includes('releasegroup:"')) {
+    const title = /releasegroup:"([^"]+)"/.exec(query)[1];
+    return { 'release-groups': ALBUM_LOOKUPS[title] || [] };
   }
   if (url.pathname === '/ws/2/release' && query.startsWith('arid:')) {
     const artistId = /arid:"([^"]+)"/.exec(query)[1];
@@ -508,6 +523,88 @@ test('add, browse, edit, shuffle and find missing records', { skip: !chromium &&
     assert.equal(await text(page, '#nav-count'), '7');
     assert.equal(await wishCount(), '1');
 
+    assert.deepEqual(errors, []);
+    await context.close();
+  } finally {
+    await browser.close();
+  }
+});
+
+test('imports a typed list and looks the records up', { skip: !chromium && 'playwright is not installed' }, async () => {
+  const browser = await chromium.launch();
+  try {
+    const { context, page, errors, mbCalls } = await openApp(browser, { viewport: { width: 420, height: 900 } });
+    await page.evaluate(() => {
+      localStorage.setItem('recordcatalog.records.v1', JSON.stringify([{
+        id: 'bends', artist: 'Radiohead', artistId: 'a-radiohead', title: 'The Bends', year: 1995, releaseGroupId: 'rg-bends',
+        format: 'LP', notes: '', releaseId: null, addedAt: new Date(2024, 0, 1).toISOString(),
+      }]));
+    });
+    await page.reload();
+    const records = () => page.evaluate(() => JSON.parse(localStorage.getItem('recordcatalog.records.v1')));
+    const byTitle = async () => Object.fromEntries((await records()).map((r) => [r.title, r]));
+
+    await page.click('#list-import-tools');
+    await page.fill('#list-form [name=list]', [
+      'Radiohead - The Bends',
+      'Portishead - Dumy (Signed)',
+      'Radiohed - Kid A',
+      'Radiohead - Creep (45)',
+      'Weezer - Weezer',
+      'Weezer - Weezer',
+      'a line with no dash',
+    ].join('\n'));
+    const summary = await text(page, '#list-summary');
+    assert.match(summary, /4 records to add/);
+    assert.match(summary, /1 record already in your collection is skipped/);
+    assert.match(summary, /1 line named an album already on the list/);
+    assert.match(summary, /1 line couldn't be read[\s\S]*a line with no dash/);
+    assert.equal(await text(page, '#list-submit'), 'Add 4 records');
+    await shot(page, 'import-01-dialog');
+    await page.click('#list-submit');
+    await page.locator('#toast.show', { hasText: 'Added 4 records' }).waitFor();
+    assert.equal(await text(page, '#nav-count'), '5');
+
+    // Records are on the shelf straight away, then looked up one by one
+    await page.locator('#lookup', { hasText: 'Looking up covers and years' }).waitFor();
+    await shot(page, 'import-02-looking-up');
+    await page.locator('#lookup', { hasText: 'Found 3 of 4 imported records' }).waitFor({ timeout: 20000 });
+    let shelf = await byTitle();
+    assert.deepEqual(
+      [shelf.Dummy.artist, shelf.Dummy.releaseGroupId, shelf.Dummy.year, shelf.Dummy.notes, shelf.Dummy.format],
+      ['Portishead', 'rg-dummy', 1994, 'Signed', 'LP'], 'the typo in the title is fixed');
+    assert.deepEqual([shelf['Kid A'].artist, shelf['Kid A'].artistId], ['Radiohead', 'a-radiohead'], 'and the one in the artist');
+    assert.deepEqual([shelf.Creep.format, shelf.Creep.releaseGroupId, shelf.Creep.notes], ['45', 'rg-creep', ''], 'a 45 is matched to the single');
+    assert.deepEqual([shelf.Weezer.releaseGroupId, shelf.Weezer.notes], [null, '2 copies'], 'two albums called Weezer: too close to call');
+    assert.ok(Object.values(shelf).every((r) => !r.pendingLookup));
+    assert.equal(mbCalls.filter((url) => url.pathname === '/ws/2/release-group').length, 4, 'one lookup per record');
+
+    // The ones not matched stay listed, even after the app is closed
+    await page.reload();
+    await page.locator('#lookup', { hasText: 'Found 3 of 4 imported records' }).waitFor();
+    await page.click('#lookup summary');
+    await shot(page, 'import-03-not-matched');
+    await page.locator('#lookup .record', { hasText: 'Weezer' }).click();
+    await page.fill('#edit-form [name=title]', 'Weezer (Blue Album)');
+    await page.click('#edit-form button[value=save]');
+    await page.locator('#lookup', { hasText: 'Found all 4 imported records' }).waitFor({ timeout: 10000 });
+    shelf = await byTitle();
+    assert.equal(shelf['Weezer (Blue Album)'].releaseGroupId, 'rg-blue', 'fixing the title looks it up again');
+    await page.click('#lookup button:has-text("Dismiss")');
+    assert.ok(await page.locator('#lookup').isHidden());
+    await page.reload();
+    assert.ok(await page.locator('#lookup').isHidden());
+
+    // Undo takes the whole import back
+    await page.click('#list-import-tools');
+    await page.fill('#list-form [name=list]', 'Portishead - Third\nPortishead - Portishead');
+    await page.click('#list-submit');
+    await page.locator('#toast.show', { hasText: 'Added 2 records' }).waitFor();
+    await page.click('#toast .toast-action');
+    assert.equal(await text(page, '#nav-count'), '5');
+    await page.waitForFunction(() => document.querySelector('#lookup').hidden);
+
+    await assertNoJunkText(page, 'collection after import');
     assert.deepEqual(errors, []);
     await context.close();
   } finally {
