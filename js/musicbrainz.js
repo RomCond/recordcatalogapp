@@ -43,7 +43,25 @@
   // store.js uses the same words to spot them in records you typed in.
   const DELUXE_WORDS = /\b(deluxe|expanded)\b/i;
 
-  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const RETRY_WAITS_MS = [2000, 4000, 8000, 16000];
+  const OFFLINE = "Couldn't reach MusicBrainz. Check your connection and try again.";
+  const BUSY = 'MusicBrainz is busy right now. Try again in a minute.';
+
+  function sleep(ms, signal) {
+    return new Promise((resolve, reject) => {
+      if (signal && signal.aborted) return reject(abortError());
+      let timer = null;
+      const onAbort = () => {
+        clearTimeout(timer);
+        reject(abortError());
+      };
+      if (signal) signal.addEventListener('abort', onAbort, { once: true });
+      timer = setTimeout(() => {
+        if (signal) signal.removeEventListener('abort', onAbort);
+        resolve();
+      }, ms);
+    });
+  }
 
   let queue = Promise.resolve();
   let lastCall = 0;
@@ -68,20 +86,24 @@
     for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
     url.searchParams.set('fmt', 'json');
 
-    for (let attempt = 0; attempt < 3; attempt++) {
-      let res;
+    for (let attempt = 0; ; attempt++) {
+      let reply = null;
       try {
-        res = await throttled(() => fetch(url, { signal }), signal);
+        reply = await throttled(async () => {
+          const res = await fetch(url, { signal });
+          return { status: res.status, data: res.ok ? await res.json() : null };
+        }, signal);
       } catch (e) {
         if (e.name === 'AbortError') throw e;
-        throw new Error("Couldn't reach MusicBrainz. Check your connection and try again.");
       }
-      if (res.ok) return res.json();
-      // 503 means we hit the rate limit. Back off and try again.
-      if (res.status !== 503) throw new Error(`MusicBrainz returned an error (${res.status}). Try again in a moment.`);
-      await sleep(1500 * (attempt + 1));
+      if (reply && reply.status >= 200 && reply.status < 300) return reply.data;
+      // 503 means MusicBrainz is busy or we hit the rate limit.
+      if (reply && reply.status !== 503) throw new Error(`MusicBrainz returned an error (${reply.status}). Try again in a moment.`);
+      const wait = RETRY_WAITS_MS[attempt];
+      if (wait === undefined) throw new Error(reply ? BUSY : OFFLINE);
+      await sleep(wait, signal);
+      if (!reply && typeof navigator !== 'undefined' && navigator.onLine === false) throw new Error(OFFLINE);
     }
-    throw new Error('MusicBrainz is busy right now. Try again in a minute.');
   }
 
   // ---------- Search query building (Lucene syntax) ----------

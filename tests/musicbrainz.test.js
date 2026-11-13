@@ -265,11 +265,17 @@ function fakeReleaseSearch(all) {
 
 // The one-request-a-second queue's pauses end straight away, so these tests don't take half a minute.
 function skipTheWait(t) {
-  t.mock.method(globalThis, 'setTimeout', (callback) => {
+  const waits = [];
+  t.mock.method(globalThis, 'setTimeout', (callback, ms) => {
+    waits.push(ms);
     callback();
     return 0;
   });
+  return waits;
 }
+
+const MIN_GAP_MS = 1100;
+const retryWaits = (waits) => waits.filter((ms) => ms > MIN_GAP_MS).map((ms) => ms / 1000);
 
 const pressings = (count, date, from = 0) => Array.from({ length: count }, (_, i) => ({
   id: `r${from + i}`, status: 'Official', date, title: 'T', 'release-group': { id: `g${(from + i) % 50}` }, media: [{ format: '12" Vinyl' }],
@@ -311,11 +317,111 @@ test('a single year with more than one search returns keeps the first 500 and sa
   assert.equal(complete, false);
 });
 
-test('network and server errors become readable messages', async (t) => {
-  t.mock.method(globalThis, 'fetch', async () => { throw new TypeError('Failed to fetch'); });
+test('a burst of 503s is waited out, longer each time', async (t) => {
+  const answers = [503, 503, 503, 503, 200];
+  const fetchMock = t.mock.method(globalThis, 'fetch', async () => jsonResponse({ artists: [{ id: 'low' }] }, answers.shift()));
+  const waits = skipTheWait(t);
+  const found = await mb.searchArtists('Low');
+  assert.equal(found[0].id, 'low');
+  assert.equal(fetchMock.mock.callCount(), 5);
+  assert.deepEqual(retryWaits(waits), [2, 4, 8, 16]);
+});
+
+test('a dropped connection is tried again, including one cut off partway through the response', async (t) => {
+  const answers = [
+    () => { throw new TypeError('Failed to fetch'); },
+    () => ({ ...jsonResponse({}), json: async () => { throw new TypeError('terminated'); } }),
+    () => jsonResponse({ artists: [{ id: 'low' }] }),
+  ];
+  const fetchMock = t.mock.method(globalThis, 'fetch', async () => answers.shift()());
+  const waits = skipTheWait(t);
+  const found = await mb.searchArtists('Low');
+  assert.equal(found[0].id, 'low');
+  assert.equal(fetchMock.mock.callCount(), 3);
+  assert.deepEqual(retryWaits(waits), [2, 4]);
+});
+
+test('a big vinyl search rides out 503s and dropped connections', async (t) => {
+  const fake = fakeReleaseSearch([...pressings(400, '1965-03-01'), ...pressings(380, '1969', 400), ...pressings(300, '2015-05-05', 780)]);
+  let call = 0;
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    call += 1;
+    if ([3, 4, 5].includes(call)) return jsonResponse({}, 503);
+    if (call === 9) throw new TypeError('Failed to fetch');
+    return fake.fetch(url);
+  });
+  const waits = skipTheWait(t);
+  const { releases, complete } = await mb.internals.searchArtistReleases('a1', 'format:(vinyl OR 12vinyl)');
+  assert.equal(releases.length, 1080);
+  assert.equal(complete, true);
+  assert.deepEqual(retryWaits(waits), [2, 4, 8, 2]);
+});
+
+test('network errors that never stop give up after 5 attempts and about 30 seconds', async (t) => {
+  const waits = skipTheWait(t);
+  const fetchMock = t.mock.method(globalThis, 'fetch', async () => { throw new TypeError('Failed to fetch'); });
   await assert.rejects(mb.searchArtists('Low'), /Couldn't reach MusicBrainz/);
-  t.mock.method(globalThis, 'fetch', async () => jsonResponse({}, 400));
+  assert.equal(fetchMock.mock.callCount(), 5);
+  assert.deepEqual(retryWaits(waits), [2, 4, 8, 16]);
+});
+
+test('503s that never stop give up after 5 attempts and say MusicBrainz is busy', async (t) => {
+  skipTheWait(t);
+  const fetchMock = t.mock.method(globalThis, 'fetch', async () => jsonResponse({}, 503));
+  await assert.rejects(mb.searchArtists('Low'), /MusicBrainz is busy/);
+  assert.equal(fetchMock.mock.callCount(), 5);
+});
+
+test('an error other than 503 is not tried again', async (t) => {
+  skipTheWait(t);
+  const fetchMock = t.mock.method(globalThis, 'fetch', async () => jsonResponse({}, 400));
   await assert.rejects(mb.searchArtists('Low'), /error \(400\)/);
+  assert.equal(fetchMock.mock.callCount(), 1);
+});
+
+test('on a device that says it is offline, a network error gives up after the first wait', async (t) => {
+  Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
+  t.after(() => delete navigator.onLine);
+  const waits = skipTheWait(t);
+  const fetchMock = t.mock.method(globalThis, 'fetch', async () => { throw new TypeError('Failed to fetch'); });
+  await assert.rejects(mb.searchArtists('Low'), /Couldn't reach MusicBrainz/);
+  assert.equal(fetchMock.mock.callCount(), 1);
+  assert.deepEqual(retryWaits(waits), [2]);
+});
+
+test('a search cancelled while it waits to try again stops at once', async (t) => {
+  const controller = new AbortController();
+  let answeredAt = 0;
+  const fetchMock = t.mock.method(globalThis, 'fetch', async () => {
+    answeredAt = Date.now();
+    setTimeout(() => controller.abort(), 50);
+    return jsonResponse({}, 503);
+  });
+  await assert.rejects(mb.search('radiohead', controller.signal), { name: 'AbortError' });
+  assert.equal(fetchMock.mock.callCount(), 1);
+  assert.ok(Date.now() - answeredAt < 1000, 'it does not sit out the 2-second wait');
+});
+
+test('a search cancelled while another request waits to try again stops at once', async (t) => {
+  const answers = [503, 200];
+  let busy;
+  const answeredBusy = new Promise((resolve) => { busy = resolve; });
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    if (!new URL(url).pathname.endsWith('/artist')) return jsonResponse({ 'release-groups': [] });
+    const status = answers.shift();
+    if (status === 503) setTimeout(busy, 50);
+    return jsonResponse({ artists: [] }, status);
+  });
+  const backingOff = mb.searchArtists('Low');
+  await answeredBusy;
+  const controller = new AbortController();
+  const startedAt = Date.now();
+  const pending = mb.search('radiohead', controller.signal);
+  controller.abort();
+  await assert.rejects(pending, { name: 'AbortError' });
+  const took = Date.now() - startedAt;
+  await backingOff;
+  assert.ok(took < 500, 'it does not wait for the other request to try again');
 });
 
 test('searchAlbumCandidates searches by artist and title, then by alias when the name finds nothing', async (t) => {

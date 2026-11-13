@@ -25,7 +25,7 @@ Any static host works too (GitHub Pages, Netlify and so on).
 
 Records are saved in the browser's `localStorage`, so each browser and device has its own copy. Use **Export backup** at the bottom of the Collection page to save a JSON file of your records and wishlist, and **Import backup** to load it somewhere else. Importing merges and skips albums that are already there.
 
-MusicBrainz allows about one request per second. The search box waits for a short pause in typing and cancels searches you've typed past, and discographies are cached for a week. Use **Refresh** on an artist to fetch again.
+MusicBrainz allows about one request per second. The search box waits for a short pause in typing and cancels searches you've typed past, and discographies are cached for a week. Use **Refresh** on an artist to fetch again. When MusicBrainz is busy or the connection drops, a request is tried again after 2, 4, 8 and 16 seconds, so a long discography load survives the odd hiccup. After that it gives up and says so, and a device that is offline gets the error after the first wait.
 
 ## Importing a list
 
