@@ -43,49 +43,42 @@
   // store.js uses the same words to spot them in records you typed in.
   const DELUXE_WORDS = /\b(deluxe|expanded)\b/i;
 
-  const RETRY_FIRST_MS = 2000;
-  const RETRY_BUDGET_MS = 30000;
+  const RETRY_WAITS_MS = [2000, 4000, 8000, 16000];
   const OFFLINE = "Couldn't reach MusicBrainz. Check your connection and try again.";
   const BUSY = 'MusicBrainz is busy right now. Try again in a minute.';
 
   function sleep(ms, signal) {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
+      if (signal && signal.aborted) return reject(abortError());
       let timer = null;
-      const done = () => {
+      const onAbort = () => {
         clearTimeout(timer);
-        if (signal) signal.removeEventListener('abort', done);
-        resolve();
+        reject(abortError());
       };
-      if (signal) signal.addEventListener('abort', done);
-      timer = setTimeout(done, ms);
+      if (signal) signal.addEventListener('abort', onAbort, { once: true });
+      timer = setTimeout(() => {
+        if (signal) signal.removeEventListener('abort', onAbort);
+        resolve();
+      }, ms);
     });
   }
 
   let queue = Promise.resolve();
-  let nextCall = 0;
+  let lastCall = 0;
 
   const abortError = () => new DOMException('Search cancelled', 'AbortError');
 
   // A call cancelled while it waits its turn never reaches MusicBrainz, so it doesn't use up the rate limit.
   function throttled(task, signal) {
     const run = queue.then(async () => {
-      const wait = nextCall - Date.now();
-      if (wait > 0 && !(signal && signal.aborted)) await sleep(wait, signal);
+      const wait = lastCall + MIN_GAP_MS - Date.now();
+      if (wait > 0 && !(signal && signal.aborted)) await sleep(wait);
       if (signal && signal.aborted) throw abortError();
-      nextCall = Date.now() + MIN_GAP_MS;
+      lastCall = Date.now();
       return task();
     });
     queue = run.catch(() => {});
     return run;
-  }
-
-  // Retry-After is a number of seconds or a date. Browsers only let the page read it if MusicBrainz
-  // lists it in Access-Control-Expose-Headers, so it may well be missing.
-  function retryAfterMs(res) {
-    const value = res.headers.get('Retry-After');
-    if (!value) return 0;
-    const ms = /^\d+$/.test(value.trim()) ? Number(value) * 1000 : Date.parse(value) - Date.now();
-    return ms > 0 ? ms : 0;
   }
 
   async function get(path, params, signal) {
@@ -93,23 +86,23 @@
     for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
     url.searchParams.set('fmt', 'json');
 
-    let waited = 0;
     for (let attempt = 0; ; attempt++) {
-      let res = null;
+      let reply = null;
       try {
-        res = await throttled(() => fetch(url, { signal }), signal);
-        if (res.ok) return await res.json();
+        reply = await throttled(async () => {
+          const res = await fetch(url, { signal });
+          return { status: res.status, data: res.ok ? await res.json() : null };
+        }, signal);
       } catch (e) {
         if (e.name === 'AbortError') throw e;
-        res = null;
       }
+      if (reply && reply.status >= 200 && reply.status < 300) return reply.data;
       // 503 means MusicBrainz is busy or we hit the rate limit.
-      if (res && res.status !== 503) throw new Error(`MusicBrainz returned an error (${res.status}). Try again in a moment.`);
-      const offline = !res && typeof navigator !== 'undefined' && navigator.onLine === false;
-      const delay = Math.max(RETRY_FIRST_MS * 2 ** attempt, res ? retryAfterMs(res) : 0);
-      if (offline || waited + delay > RETRY_BUDGET_MS) throw new Error(res ? BUSY : OFFLINE);
-      waited += delay;
-      nextCall = Math.max(nextCall, Date.now() + delay);
+      if (reply && reply.status !== 503) throw new Error(`MusicBrainz returned an error (${reply.status}). Try again in a moment.`);
+      const wait = RETRY_WAITS_MS[attempt];
+      if (wait === undefined) throw new Error(reply ? BUSY : OFFLINE);
+      await sleep(wait, signal);
+      if (!reply && typeof navigator !== 'undefined' && navigator.onLine === false) throw new Error(OFFLINE);
     }
   }
 

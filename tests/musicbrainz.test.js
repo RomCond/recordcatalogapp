@@ -4,8 +4,8 @@ const mb = require('../js/musicbrainz.js');
 
 const { field, formatFromMedia, mediaLabel, creditName } = mb.internals;
 
-function jsonResponse(body, status = 200, headers = {}) {
-  return { ok: status >= 200 && status < 300, status, headers: new Headers(headers), json: async () => body };
+function jsonResponse(body, status = 200) {
+  return { ok: status >= 200 && status < 300, status, json: async () => body };
 }
 
 test('search fields escape Lucene syntax and neutralize operators', () => {
@@ -274,7 +274,8 @@ function skipTheWait(t) {
   return waits;
 }
 
-const retryWaits = (waits) => waits.filter((ms) => ms > 1100).map((ms) => Math.round(ms / 1000));
+const MIN_GAP_MS = 1100;
+const retryWaits = (waits) => waits.filter((ms) => ms > MIN_GAP_MS).map((ms) => ms / 1000);
 
 const pressings = (count, date, from = 0) => Array.from({ length: count }, (_, i) => ({
   id: `r${from + i}`, status: 'Official', date, title: 'T', 'release-group': { id: `g${(from + i) % 50}` }, media: [{ format: '12" Vinyl' }],
@@ -326,18 +327,6 @@ test('a burst of 503s is waited out, longer each time', async (t) => {
   assert.deepEqual(retryWaits(waits), [2, 4, 8, 16]);
 });
 
-test('a 503 waits as long as Retry-After asks', async (t) => {
-  const answers = [jsonResponse({}, 503, { 'Retry-After': '20' }), jsonResponse({ artists: [] })];
-  t.mock.method(globalThis, 'fetch', async () => answers.shift());
-  const waits = skipTheWait(t);
-  await mb.searchArtists('Low');
-  assert.deepEqual(retryWaits(waits), [20]);
-
-  const busy = t.mock.method(globalThis, 'fetch', async () => jsonResponse({}, 503, { 'Retry-After': '20' }));
-  await assert.rejects(mb.searchArtists('Low'), /MusicBrainz is busy/);
-  assert.equal(busy.mock.callCount(), 2);
-});
-
 test('a dropped connection is tried again, including one cut off partway through the response', async (t) => {
   const answers = [
     () => { throw new TypeError('Failed to fetch'); },
@@ -368,26 +357,36 @@ test('a big vinyl search rides out 503s and dropped connections', async (t) => {
   assert.deepEqual(retryWaits(waits), [2, 4, 8, 2]);
 });
 
-test('when MusicBrainz stays down, a request gives up with a readable message', async (t) => {
+test('network errors that never stop give up after 5 attempts and about 30 seconds', async (t) => {
   const waits = skipTheWait(t);
-  const offline = t.mock.method(globalThis, 'fetch', async () => { throw new TypeError('Failed to fetch'); });
+  const fetchMock = t.mock.method(globalThis, 'fetch', async () => { throw new TypeError('Failed to fetch'); });
   await assert.rejects(mb.searchArtists('Low'), /Couldn't reach MusicBrainz/);
-  assert.equal(offline.mock.callCount(), 5);
-  assert.deepEqual(retryWaits(waits), [2, 4, 8, 16], 'about 30 seconds in all');
+  assert.equal(fetchMock.mock.callCount(), 5);
+  assert.deepEqual(retryWaits(waits), [2, 4, 8, 16]);
+});
 
-  const busy = t.mock.method(globalThis, 'fetch', async () => jsonResponse({}, 503));
+test('503s that never stop give up after 5 attempts and say MusicBrainz is busy', async (t) => {
+  skipTheWait(t);
+  const fetchMock = t.mock.method(globalThis, 'fetch', async () => jsonResponse({}, 503));
   await assert.rejects(mb.searchArtists('Low'), /MusicBrainz is busy/);
-  assert.equal(busy.mock.callCount(), 5);
+  assert.equal(fetchMock.mock.callCount(), 5);
+});
 
-  const broken = t.mock.method(globalThis, 'fetch', async () => jsonResponse({}, 400));
+test('an error other than 503 is not tried again', async (t) => {
+  skipTheWait(t);
+  const fetchMock = t.mock.method(globalThis, 'fetch', async () => jsonResponse({}, 400));
   await assert.rejects(mb.searchArtists('Low'), /error \(400\)/);
-  assert.equal(broken.mock.callCount(), 1);
+  assert.equal(fetchMock.mock.callCount(), 1);
+});
 
+test('on a device that says it is offline, a network error gives up after the first wait', async (t) => {
   Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
   t.after(() => delete navigator.onLine);
-  const noSignal = t.mock.method(globalThis, 'fetch', async () => { throw new TypeError('Failed to fetch'); });
+  const waits = skipTheWait(t);
+  const fetchMock = t.mock.method(globalThis, 'fetch', async () => { throw new TypeError('Failed to fetch'); });
   await assert.rejects(mb.searchArtists('Low'), /Couldn't reach MusicBrainz/);
-  assert.equal(noSignal.mock.callCount(), 1);
+  assert.equal(fetchMock.mock.callCount(), 1);
+  assert.deepEqual(retryWaits(waits), [2]);
 });
 
 test('a search cancelled while it waits to try again stops at once', async (t) => {
@@ -401,6 +400,28 @@ test('a search cancelled while it waits to try again stops at once', async (t) =
   await assert.rejects(mb.search('radiohead', controller.signal), { name: 'AbortError' });
   assert.equal(fetchMock.mock.callCount(), 1);
   assert.ok(Date.now() - answeredAt < 1000, 'it does not sit out the 2-second wait');
+});
+
+test('a search cancelled while another request waits to try again stops at once', async (t) => {
+  const answers = [503, 200];
+  let busy;
+  const answeredBusy = new Promise((resolve) => { busy = resolve; });
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    if (!new URL(url).pathname.endsWith('/artist')) return jsonResponse({ 'release-groups': [] });
+    const status = answers.shift();
+    if (status === 503) setTimeout(busy, 50);
+    return jsonResponse({ artists: [] }, status);
+  });
+  const backingOff = mb.searchArtists('Low');
+  await answeredBusy;
+  const controller = new AbortController();
+  const startedAt = Date.now();
+  const pending = mb.search('radiohead', controller.signal);
+  controller.abort();
+  await assert.rejects(pending, { name: 'AbortError' });
+  const took = Date.now() - startedAt;
+  await backingOff;
+  assert.ok(took < 500, 'it does not wait for the other request to try again');
 });
 
 test('searchAlbumCandidates searches by artist and title, then by alias when the name finds nothing', async (t) => {
