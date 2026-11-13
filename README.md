@@ -1,15 +1,17 @@
 # Record Catalog
 
-A small web app for keeping track of the vinyl records you own and the ones you're looking for.
+Record Catalog is a small web app that tracks the vinyl records you own and the ones you're looking for.
 
-- **Add records fast.** One search box takes any part of an album or artist name ("ok comp", "radiohead kid") or the barcode from the sleeve, and shows matches as you type. It's vinyl only: search lists albums and singles that came out on vinyl (one line each, however many pressings there are), plus studio albums whose vinyl MusicBrainz hasn't confirmed, marked "Vinyl not confirmed", and a barcode for a CD or cassette is turned away. LPs and 12" records are included; 45s (7") and 10" records are left out unless you tick **Include 45s and 10" records** on the Add page (or the **45s and 10"** chip in the discography, which is the same setting). Add one in one tap; year and cover art fill in on their own. Anything that isn't in the database can be added by hand. You keep one copy per album: albums you already have show "In collection" instead of an Add button (a deluxe edition counts as its own album).
-- **Import a list.** Already have your records in a note or spreadsheet? Tap **Import a list** on the Collection page and paste it, or choose a text file, one record per line: `Steely Dan - Aja`. They're all added at once, then looked up on MusicBrainz in the background for covers, years and spellings. See [Importing a list](#importing-a-list).
-- **Browse your shelf.** Switch between covers (three across on a phone) and a slim list with the buttons next to the search box; the app remembers which. Records sit under the first letter of the artist ("The" doesn't count), and on a long list a strip of letters down the right side jumps to one: tap a letter or slide along them. **Filter** holds the format filter and the sort order (artist, recently added, year by decade, or title). Tap a record to edit or delete it, or to open the artist's discography.
-- **Pick one at random.** Filter by format or artist if you like. It won't repeat the last few picks. The card behind the pick fades down from the main color of its cover, and so does the top of a record's edit screen.
-- **See what you're missing.** Pick an artist and the app compares their discography with your shelf: what you have, what you don't, and a copyable list to take to the record store. Tap "Got it" when you find one, or "Wishlist" to save it for later.
-- **Keep a wishlist.** The Collection tab switches between your records and your wishlist. Tap "Got it" on a wishlist record to move it onto your shelf; getting a record any other way takes it off the wishlist too.
+- **Add records fast.** One search box takes part of an album or artist name, like "ok comp" or "radiohead kid", or the barcode from the sleeve, and shows matches as you type. Search lists only vinyl. Each album or single that came out on vinyl gets one line, however many pressings it has. Studio albums show even when MusicBrainz lists no vinyl pressing for them, marked "Vinyl not confirmed". A barcode for a CD or cassette gets a message saying so instead of a result. Search includes LPs and 12" records, and leaves out 45s (7") and 10" records unless you tick **Include 45s and 10" records** on the Add page. The **45s and 10"** chip in the discography is the same setting. One tap adds a record, and its year and cover art fill in on their own. You can add anything that isn't in the database by hand. You keep one copy per album, so an album you already have shows "In collection" instead of an Add button. A deluxe edition counts as its own album.
+- **Import a list.** If your records are already in a note or spreadsheet, tap **Import a list** on the Collection page and paste the list or choose a text file, with one record per line: `Steely Dan - Aja`. The app adds them all at once, then looks each one up on MusicBrainz in the background for its cover, year and spelling. See [Importing a list](#importing-a-list).
+- **Browse your shelf.** The buttons next to the search box switch between covers, three across on a phone, and a slim list. The app remembers your choice. The collection groups records under the first letter of the artist's name, ignoring a leading "The". On a list of more than 20 records, a strip of letters runs down the right side. Tap a letter, or slide a finger along the strip, to jump to it. **Filter** opens the format filter and the sort order: artist, recently added, year (grouped by decade) or title. Tap a record to edit or delete it, or to open the artist's discography.
+- **Pick one at random.** You can limit the pick to a format or an artist. The app avoids repeating any of your last five picks. The background behind the pick is a gradient from the main color of its cover, and the top of a record's edit screen uses the same gradient.
+- **See what you're missing.** Pick an artist, and the app compares their discography with your collection. It lists what you have and what you're missing, and **Copy list** puts the missing titles on your clipboard to take to the record store. Tap **Got it** when you find one, or **Wishlist** to save it for later.
+- **Keep a wishlist.** The Collection tab switches between your records and your wishlist. Tap **Got it** on a wishlist record to move it into your collection. Adding a record any other way also takes it off the wishlist.
 
-Lookups use [MusicBrainz](https://musicbrainz.org) and the [Cover Art Archive](https://coverartarchive.org). Both are free and need no API key. Reading a cover's main color needs the image server to allow cross-origin reads; if it doesn't, the record's placeholder color is used instead. Covers load at 500px for the lists and 1200px for the random pick, so they stay sharp on phone screens. The colors are electric blue on cool white, or near-black in dark mode. Headings use Inter Tight and text uses Inter, from Google Fonts; without a connection they fall back to the system font. Light or dark follows the phone's setting.
+Lookups use [MusicBrainz](https://musicbrainz.org) and the [Cover Art Archive](https://coverartarchive.org). Both are free and need no API key. To read a cover's main color, the app needs the image server to allow cross-origin reads. If it doesn't, the app uses the record's placeholder color. Covers load at 500px in lists and the cover grid and at 1200px for the random pick, so they stay sharp on phone screens.
+
+The colors are electric blue on cool white, or near-black in dark mode, and the app follows the phone's light or dark setting. Headings use Inter Tight and text uses Inter, both from Google Fonts. Without a connection, they fall back to the system font.
 
 ## Running it
 
@@ -19,42 +21,46 @@ There is no build step. Open `index.html` in a browser, or serve the folder:
 npm start   # python3 -m http.server 8080, then open http://localhost:8080
 ```
 
-Any static host works too (GitHub Pages, Netlify and so on).
+Any static host, such as GitHub Pages or Netlify, works too.
 
 ## Where the data lives
 
-Records are saved in the browser's `localStorage`, so each browser and device has its own copy. Use **Export backup** at the bottom of the Collection page to save a JSON file of your records and wishlist, and **Import backup** to load it somewhere else. Importing merges and skips albums that are already there.
+The app saves records in the browser's `localStorage`, so each browser and device has its own copy. **Export backup** at the bottom of the Collection page saves a JSON file of your records and wishlist, and **Import backup** loads it somewhere else. Importing a backup merges it with what's there and skips albums you already have.
 
-MusicBrainz allows about one request per second. The search box waits for a short pause in typing and cancels searches you've typed past, and discographies are cached for a week. Use **Refresh** on an artist to fetch again.
+MusicBrainz allows about one request per second. The search box waits for a short pause in typing and cancels searches you've typed past. The app keeps each discography for a week, and **Refresh** on an artist fetches it again.
 
 ## Importing a list
 
-Each line is an artist, a dash with a space on each side, then the title (a tab between them works too, so you can paste two columns from a spreadsheet). Numbering and bullets at the start of a line are ignored. Brackets at the end of a title become notes, like `(Signed)` or `(Test Press)`, except "Deluxe" or "Expanded", which stay in the title so the deluxe edition counts as its own album. `(45)` or `(Single)` makes the record a 45; everything else is added as the format chosen under **Add as**. The import screen says how many records it will add before you add them, and lists any line it can't read.
+Each line is an artist, a dash with a space on each side, then the title. A tab between artist and title also works, so you can paste two columns from a spreadsheet. The import ignores numbering and bullets at the start of a line.
 
-You keep one copy per album, so albums already in your collection are skipped, and lines naming the same album twice become one record with a note like "2 copies".
+Text in brackets at the end of a title becomes a note, like `(Signed)` or `(Test Press)`. The words "Deluxe" and "Expanded" stay in the title instead, so the deluxe edition counts as its own album. `(45)` or `(Single)` makes the record a 45, and since the format already says so, the app drops it from the notes. Every other record gets the format chosen under **Add as**. Before you add anything, the import screen says how many records it will add and lists any lines it can't read.
 
-After adding, the app looks each record up on MusicBrainz, about one a second, and shows its progress above the collection. You can keep using the app meanwhile; if it's closed or loses its connection, the lookups carry on the next time it's open (or when you tap **Try again**). A match is only taken when it's clear:
+You keep one copy per album, so the import skips albums already in your collection. Lines that name the same album become one record with a note like "2 copies".
 
-- Small typos in the artist or title are fine ("Metalica", "Random Access Memory"), and the record takes MusicBrainz's spelling. Numbers have to agree, so "Toto" is never "Toto IV".
-- An artist name that's part of a longer credit, like "Prince" for "Prince and The Revolution", keeps your spelling so it stays grouped with your other records.
-- Artists listed under another name, like Masayoshi Takanaka (高中正義), are found by their alias.
-- A studio album wins over a single or a live album of the same name, and a 45 is matched to the single.
-- When two different albums fit about as well (Weezer has several called "Weezer"), it's left alone.
+After adding, the app looks up each record on MusicBrainz, about one a second, and shows its progress above the collection. You can keep using the app while it works. If you close the app or it loses its connection, the lookups continue the next time it's open, or when you tap **Try again**. The app only takes a match when it's clear:
 
-Records that weren't matched are listed above the collection, with no cover or year. Tap one to fix its artist or title and it's looked up again. **Dismiss** hides the list.
+- Small typos in the artist or title still match, like "Metalica" or "Random Access Memory", and the record takes MusicBrainz's spelling. Numbers have to agree, so "Toto I" never matches "Toto IV".
+- An artist name that's part of a longer credit, like "Prince" for "Prince and The Revolution", keeps your spelling, so it stays grouped with your other records.
+- The app finds artists that MusicBrainz lists under another name by their alias. Masayoshi Takanaka, for example, is 高中正義 on MusicBrainz.
+- When a studio album shares its name with a single or a live album, the studio album is the match. A record marked as a 45 matches the single.
+- When two different albums fit about equally well, like Weezer's several albums called "Weezer", the app leaves the record unmatched.
 
-## How "missing" is worked out
+The panel above the collection lists the records that weren't matched, which have no cover or year. Tap one to fix its artist or title, and the app looks it up again. **Dismiss** hides the list.
+
+## How the missing list works
 
 1. The app fetches every album, EP and single credited to the artist on MusicBrainz.
-2. It also checks which of those albums have at least one vinyl pressing: an LP or 12" record, or a 45 or 10" record when those are turned on. Flexi-discs, VinylDisc hybrids and bootlegs don't count. MusicBrainz search returns at most 500 results at a time, so for artists with more vinyl pressings than that (David Bowie, the Beatles) the app searches a range of years at a time. Those take longer to load, up to about 45 seconds.
-3. Deluxe and expanded editions get their own line right after the original, since they add songs. MusicBrainz usually files them under the original album, so the app finds them by releases whose title or note says "deluxe" or "expanded". All of an album's deluxe releases fold into one line, and owning one edition doesn't tick off the other.
+2. It checks which of those have at least one vinyl pressing: an LP or 12" record, or a 45 or 10" record when you've turned those on. Flexi-discs, VinylDisc hybrids and bootlegs don't count. MusicBrainz search returns at most 500 results per query, so for artists with more vinyl pressings than that, the app searches a range of years at a time. At one request a second, big catalogs take longer to load, about 15 seconds for David Bowie and 40 for the Beatles.
+3. Deluxe and expanded editions get their own line right after the original, since they add songs. MusicBrainz usually files them under the original album, so the app finds them by releases whose title or note says "deluxe" or "expanded". All of an album's deluxe releases share one line. Owning the original doesn't count as owning the deluxe edition, or the other way round.
 4. A record you added through search or barcode matches by its MusicBrainz release group id.
 5. A record you typed in by hand matches by title, ignoring case, accents, punctuation and notes like "(2009 Remaster)". If its title says "Deluxe" or "Expanded", it goes on the deluxe line.
-6. Anything by that artist that matches nothing is listed under "Yours, but not matched" so you can fix the title.
+6. Records by that artist that match nothing appear under "Yours, but not matched", so you can fix the title.
 
-**Vinyl only** is on by default, so the missing list only shows releases that came out on vinyl, one line per album no matter how many pressings exist. Studio albums are the exception: MusicBrainz often lacks the vinyl pressings of albums that have them, so they show anyway, marked "Vinyl not confirmed". Singles, EPs, live albums, compilations and deluxe editions still need a vinyl pressing listed. If you know a release is out on vinyl, tap **Confirm** under "Vinyl not confirmed" (in the discography or in search results) and it counts as vinyl from then on; **Undo** takes it back. Owning a record in a vinyl format confirms it automatically. Confirmations are saved on the device and included in backups. Records you already own always show. Turn Vinyl only off to see everything.
+**Vinyl only** is on by default, so the missing list shows only releases that came out on vinyl, one line per album however many pressings exist. Studio albums are the exception. MusicBrainz often lacks the vinyl pressings of albums that have them, so studio albums show anyway, marked "Vinyl not confirmed". Singles, EPs, live albums, compilations and deluxe editions still need a vinyl pressing in MusicBrainz.
 
-Studio albums are shown by default. EPs, singles, live albums, compilations and other types can be switched on per artist.
+If you know a release came out on vinyl, tap **Confirm** under "Vinyl not confirmed", in the discography or in search results, and the app counts it as vinyl from then on. **Undo** takes the confirmation back. Owning a record in a vinyl format also confirms it. The app saves confirmations on the device and includes them in backups. Records you already own always show. Turn **Vinyl only** off to see everything.
+
+The discography shows studio albums by default. The toggles at the top switch on EPs, singles, live albums, compilations and other types, and the choice applies to every artist.
 
 ## Project layout
 
@@ -64,14 +70,14 @@ css/styles.css        styles, light and dark
 js/store.js           records, backups, caching, and the matching logic
 js/musicbrainz.js     MusicBrainz and Cover Art Archive client
 js/app.js             the UI
-tests/                unit tests and a browser test
+tests/                unit tests and browser tests
 ```
 
 ## Tests
 
 ```sh
 npm test            # unit tests, no install needed (Node 18+)
-npm run test:e2e    # browser test with Playwright
+npm run test:e2e    # browser tests with Playwright
 ```
 
-The browser test needs Playwright (`npm install`, then `npx playwright install chromium`). It answers MusicBrainz calls with fixed sample data so it runs offline and gives the same result every time. Set `SCREENSHOT_DIR=some/folder` to save screenshots of each view.
+The browser tests need Playwright (`npm install`, then `npx playwright install chromium`). They answer MusicBrainz calls with fixed sample data, so they run offline and give the same result every time. Set `SCREENSHOT_DIR=some/folder` to save screenshots of each view.
