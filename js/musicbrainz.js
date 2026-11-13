@@ -43,14 +43,11 @@
   // store.js uses the same words to spot them in records you typed in.
   const DELUXE_WORDS = /\b(deluxe|expanded)\b/i;
 
-  // A request that fails with a 503 or a network error is tried again after 2, 4, 8 and 16 seconds,
-  // or later if MusicBrainz asks with Retry-After. It gives up once the waits would pass 30 seconds.
   const RETRY_FIRST_MS = 2000;
   const RETRY_BUDGET_MS = 30000;
   const OFFLINE = "Couldn't reach MusicBrainz. Check your connection and try again.";
   const BUSY = 'MusicBrainz is busy right now. Try again in a minute.';
 
-  // Ends early, without an error, if the signal aborts.
   function sleep(ms, signal) {
     return new Promise((resolve) => {
       let timer = null;
@@ -65,7 +62,6 @@
   }
 
   let queue = Promise.resolve();
-  // The earliest time the next request may start.
   let nextCall = 0;
 
   const abortError = () => new DOMException('Search cancelled', 'AbortError');
@@ -99,7 +95,6 @@
 
     let waited = 0;
     for (let attempt = 0; ; attempt++) {
-      // Stays null when the connection fails, including partway through the response.
       let res = null;
       try {
         res = await throttled(() => fetch(url, { signal }), signal);
@@ -108,14 +103,12 @@
         if (e.name === 'AbortError') throw e;
         res = null;
       }
-      // 503 means MusicBrainz is busy or we hit the rate limit. That and a dropped connection usually
-      // pass within seconds, so try again, waiting longer each time.
+      // 503 means MusicBrainz is busy or we hit the rate limit.
       if (res && res.status !== 503) throw new Error(`MusicBrainz returned an error (${res.status}). Try again in a moment.`);
       const offline = !res && typeof navigator !== 'undefined' && navigator.onLine === false;
       const delay = Math.max(RETRY_FIRST_MS * 2 ** attempt, res ? retryAfterMs(res) : 0);
       if (offline || waited + delay > RETRY_BUDGET_MS) throw new Error(res ? BUSY : OFFLINE);
       waited += delay;
-      // Every queued request waits, not just this one, so the queue as a whole slows down.
       nextCall = Math.max(nextCall, Date.now() + delay);
     }
   }

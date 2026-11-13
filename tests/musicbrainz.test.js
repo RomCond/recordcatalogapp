@@ -264,7 +264,6 @@ function fakeReleaseSearch(all) {
 }
 
 // The one-request-a-second queue's pauses end straight away, so these tests don't take half a minute.
-// Returns the length of each pause, in milliseconds.
 function skipTheWait(t) {
   const waits = [];
   t.mock.method(globalThis, 'setTimeout', (callback, ms) => {
@@ -275,7 +274,6 @@ function skipTheWait(t) {
   return waits;
 }
 
-// The waits before a request was tried again, in seconds. The usual gap between requests is left out.
 const retryWaits = (waits) => waits.filter((ms) => ms > 1100).map((ms) => Math.round(ms / 1000));
 
 const pressings = (count, date, from = 0) => Array.from({ length: count }, (_, i) => ({
@@ -335,7 +333,6 @@ test('a 503 waits as long as Retry-After asks', async (t) => {
   await mb.searchArtists('Low');
   assert.deepEqual(retryWaits(waits), [20]);
 
-  // Asked to wait 20 seconds twice, it gives up rather than wait past 30 seconds in all.
   const busy = t.mock.method(globalThis, 'fetch', async () => jsonResponse({}, 503, { 'Retry-After': '20' }));
   await assert.rejects(mb.searchArtists('Low'), /MusicBrainz is busy/);
   assert.equal(busy.mock.callCount(), 2);
@@ -382,12 +379,10 @@ test('when MusicBrainz stays down, a request gives up with a readable message', 
   await assert.rejects(mb.searchArtists('Low'), /MusicBrainz is busy/);
   assert.equal(busy.mock.callCount(), 5);
 
-  // Other errors aren't tried again.
   const broken = t.mock.method(globalThis, 'fetch', async () => jsonResponse({}, 400));
   await assert.rejects(mb.searchArtists('Low'), /error \(400\)/);
   assert.equal(broken.mock.callCount(), 1);
 
-  // Nor is a failed request when the device says it's offline.
   Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
   t.after(() => delete navigator.onLine);
   const noSignal = t.mock.method(globalThis, 'fetch', async () => { throw new TypeError('Failed to fetch'); });
