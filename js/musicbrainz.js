@@ -43,24 +43,53 @@
   // store.js uses the same words to spot them in records you typed in.
   const DELUXE_WORDS = /\b(deluxe|expanded)\b/i;
 
-  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  // A request that fails with a 503 or a network error is tried again after 2, 4, 8 and 16 seconds,
+  // or later if MusicBrainz asks with Retry-After. It gives up once the waits would pass 30 seconds.
+  const RETRY_FIRST_MS = 2000;
+  const RETRY_BUDGET_MS = 30000;
+  const OFFLINE = "Couldn't reach MusicBrainz. Check your connection and try again.";
+  const BUSY = 'MusicBrainz is busy right now. Try again in a minute.';
+
+  // Ends early, without an error, if the signal aborts.
+  function sleep(ms, signal) {
+    return new Promise((resolve) => {
+      let timer = null;
+      const done = () => {
+        clearTimeout(timer);
+        if (signal) signal.removeEventListener('abort', done);
+        resolve();
+      };
+      if (signal) signal.addEventListener('abort', done);
+      timer = setTimeout(done, ms);
+    });
+  }
 
   let queue = Promise.resolve();
-  let lastCall = 0;
+  // The earliest time the next request may start.
+  let nextCall = 0;
 
   const abortError = () => new DOMException('Search cancelled', 'AbortError');
 
   // A call cancelled while it waits its turn never reaches MusicBrainz, so it doesn't use up the rate limit.
   function throttled(task, signal) {
     const run = queue.then(async () => {
-      const wait = lastCall + MIN_GAP_MS - Date.now();
-      if (wait > 0 && !(signal && signal.aborted)) await sleep(wait);
+      const wait = nextCall - Date.now();
+      if (wait > 0 && !(signal && signal.aborted)) await sleep(wait, signal);
       if (signal && signal.aborted) throw abortError();
-      lastCall = Date.now();
+      nextCall = Date.now() + MIN_GAP_MS;
       return task();
     });
     queue = run.catch(() => {});
     return run;
+  }
+
+  // Retry-After is a number of seconds or a date. Browsers only let the page read it if MusicBrainz
+  // lists it in Access-Control-Expose-Headers, so it may well be missing.
+  function retryAfterMs(res) {
+    const value = res.headers.get('Retry-After');
+    if (!value) return 0;
+    const ms = /^\d+$/.test(value.trim()) ? Number(value) * 1000 : Date.parse(value) - Date.now();
+    return ms > 0 ? ms : 0;
   }
 
   async function get(path, params, signal) {
@@ -68,20 +97,27 @@
     for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
     url.searchParams.set('fmt', 'json');
 
-    for (let attempt = 0; attempt < 3; attempt++) {
-      let res;
+    let waited = 0;
+    for (let attempt = 0; ; attempt++) {
+      // Stays null when the connection fails, including partway through the response.
+      let res = null;
       try {
         res = await throttled(() => fetch(url, { signal }), signal);
+        if (res.ok) return await res.json();
       } catch (e) {
         if (e.name === 'AbortError') throw e;
-        throw new Error("Couldn't reach MusicBrainz. Check your connection and try again.");
+        res = null;
       }
-      if (res.ok) return res.json();
-      // 503 means we hit the rate limit. Back off and try again.
-      if (res.status !== 503) throw new Error(`MusicBrainz returned an error (${res.status}). Try again in a moment.`);
-      await sleep(1500 * (attempt + 1));
+      // 503 means MusicBrainz is busy or we hit the rate limit. That and a dropped connection usually
+      // pass within seconds, so try again, waiting longer each time.
+      if (res && res.status !== 503) throw new Error(`MusicBrainz returned an error (${res.status}). Try again in a moment.`);
+      const offline = !res && typeof navigator !== 'undefined' && navigator.onLine === false;
+      const delay = Math.max(RETRY_FIRST_MS * 2 ** attempt, res ? retryAfterMs(res) : 0);
+      if (offline || waited + delay > RETRY_BUDGET_MS) throw new Error(res ? BUSY : OFFLINE);
+      waited += delay;
+      // Every queued request waits, not just this one, so the queue as a whole slows down.
+      nextCall = Math.max(nextCall, Date.now() + delay);
     }
-    throw new Error('MusicBrainz is busy right now. Try again in a minute.');
   }
 
   // ---------- Search query building (Lucene syntax) ----------
